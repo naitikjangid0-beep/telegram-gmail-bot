@@ -193,35 +193,27 @@ def assign_task(message):
 
     bot.send_message(message.chat.id, task_msg, parse_mode="HTML", reply_markup=inline_btn)
 
+# 1. User "Done" dabaye -> Bot Screenshot maange
 @bot.callback_query_handler(func=lambda call: call.data.startswith("done_"))
 def handle_done(call):
-    email_submitted = call.data.split("done_")[1]
-    user_id = call.from_user.id
-    user_name = call.from_user.first_name
-
-    bot.answer_callback_query(call.id, "Task Submitted for Verification!")
     bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-    
-    # Task Done Message with Logout Rule
-    user_confirm_msg = (
-        "✅ <b>Submitted!</b> Your account will be verified shortly.\n\n"
-        "⚠️ <b>Important Rule:</b>\n"
-        "Gmail banane ke baad usko apne device se logout karein.\n\n"
-        "📸 <b>Next Step:</b> Ab aap bane hue Gmail account ka screenshot bhejiye!"
-    )
-    bot.send_message(call.message.chat.id, user_confirm_msg, parse_mode="HTML")
+    bot.send_message(call.message.chat.id, "📸 Please send the Gmail account screenshot now.")
+
+# 2. User Screenshot (Photo) bheje -> Bot Success message de
+@bot.message_handler(content_types=['photo'])
+def handle_screenshot(message):
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name
+
+    bot.reply_to(message, "✅ Submitted successfully!\n💰 ₹10 pending, wait for approval.")
 
     if ADMIN_CHAT_ID:
-        admin_alert = (
-            f"📥 <b>NEW GMAIL SUBMITTED</b>\n\n"
-            f"👤 <b>User:</b> {user_name} (<code>{user_id}</code>)\n"
-            f"📧 <b>Email:</b> <code>{email_submitted}</code>\n"
-            f"🔑 <b>Password:</b> <code>{FIXED_PASSWORD}</code>"
-        )
+        photo_id = message.photo[-1].file_id
+        admin_text = f"📥 <b>NEW SUBMISSION</b>\n👤 User: {user_name} (<code>{user_id}</code>)\nStatus: Pending Approval"
         try:
-            bot.send_message(ADMIN_CHAT_ID, admin_alert, parse_mode="HTML")
+            bot.send_photo(ADMIN_CHAT_ID, photo_id, caption=admin_text, parse_mode="HTML")
         except Exception as e:
-            print("Admin alert error:", e)
+            print("Admin photo error:", e)
 
 @bot.message_handler(func=lambda message: message.text == "🎁 Rewards")
 def rewards_info(message):
