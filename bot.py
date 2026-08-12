@@ -173,11 +173,13 @@ def start_message(message):
     user_id = message.from_user.id
     first_name = message.from_user.first_name
 
-    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
-    if not cursor.fetchone():
-        cursor.execute("INSERT INTO users (user_id, first_name, balance, tasks_done) VALUES (?, ?, 0, 0)",
-                       (user_id, first_name))
-        conn.commit()
+    try:
+        cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO users (user_id, first_name, balance, tasks_done) VALUES (?, ?, 0, 0)", (user_id, first_name))
+            conn.commit()
+    except Exception as e:
+        print("Database Error:", e)
 
     # Direct Force Join Popup
     send_force_join_msg(message.chat.id)
