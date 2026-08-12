@@ -11,20 +11,23 @@ def get_db_connection():
     return conn
 
 # Database setup / Auto-migration
+# Database setup / Auto-migration
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Check & Add new columns dynamically if not exist
-    cursor.execute("PRAGMA table_info(users)")
-    columns = [column[1] for column in cursor.fetchall()]
-    
-    if 'assigned_email' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN assigned_email TEXT")
-    if 'status' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'Pending'")
-    if 'username' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN username TEXT")
+    # Create table if it doesn't exist
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            first_name TEXT,
+            username TEXT,
+            balance REAL DEFAULT 0,
+            tasks_done INTEGER DEFAULT 0,
+            assigned_email TEXT,
+            status TEXT DEFAULT 'Pending'
+        )
+    ''')
         
     conn.commit()
     conn.close()
