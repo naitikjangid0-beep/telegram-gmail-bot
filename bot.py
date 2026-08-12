@@ -230,7 +230,7 @@ def handle_screenshot(message):
 
     if ADMIN_CHAT_ID:
         photo_id = message.photo[-1].file_id
-        admin_text = f"📥 <b>NEW SUBMISSION</b>\n👤 User: {user_name} (<code>{user_id}</code>)\nStatus: Pending Approval"
+       admin_text = f"📥 <b>NEW SUBMISSION</b>\n👤 User: {user_name} (<code>{user_id}</code>)\n💰 Reward: ₹10 Pending\n\n📸 <i>Check screenshot above to verify the Gmail account!</i>"
         try:
             bot.send_photo(ADMIN_CHAT_ID, photo_id, caption=admin_text, parse_mode="HTML")
         except Exception as e:
