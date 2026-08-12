@@ -295,29 +295,25 @@ def handle_screenshot_auto(message):
         bot.reply_to(message, "Please register first using /start")
         return
 
-    # 1. User ka balance & task count auto-update karo
-    cursor.execute("UPDATE users SET balance = balance + 10, tasks_done = tasks_done + 1 WHERE user_id = ?", (user_id,))
-    conn.commit()
-
-    # 2. Admin ID par Record/Log bhejo (For Owner Record)
+    # Admin ko Photo Log bhejna (Verification ke liye)
     photo_id = message.photo[-1].file_id
     try:
         bot.send_photo(
             ADMIN_ID, 
             photo_id, 
-            caption=f"📥 **Task Completed!**\n\n👤 **User:** {first_name}\n🆔 **ID:** `{user_id}`\n💰 **Reward Credited:** ₹10",
-            parse_mode="Markdown"
+            caption=f"📥 <b>New Task Submitted for Approval!</b>\n\n👤 <b>User:</b> {first_name}\n🆔 <b>ID:</b> <code>{user_id}</code>\n💰 <b>Reward:</b> ₹10 Pending",
+            parse_mode="HTML"
         )
     except Exception as e:
         print(f"Error sending log to admin: {e}")
 
-    # 3. User ko immediate success message with 24-48 hour note
+    # User ko Confirmation (Pending for Approval)
     bot.reply_to(
         message, 
-        "✅ **Screenshot Received!**\n\n"
-        "Task successfully completed and ₹10 credited to your account.\n\n"
-        "📌 **Note:** Withdrawal payments are processed within **24 to 48 hours**. Thank you for your patience!",
-        parse_mode="Markdown"
+        "✅ <b>Task Submitted Successfully!</b>\n\n"
+        "⏳ <b>Reward:</b> ₹10 Pending for Approval\n\n"
+        "Aapka screenshot verification ke liye chala gaya hai. Check hone ke baad reward aapke account mein add ho jayega.",
+        parse_mode="HTML"
     )
 # --------------------------------------------------
 # RUN BOT
