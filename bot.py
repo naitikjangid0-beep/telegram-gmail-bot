@@ -192,14 +192,23 @@ def check_join_callback(call):
 
 @bot.message_handler(func=lambda message: message.text == "📄 Register an Account")
 def assign_task(message):
+    user_id = message.from_user.id
+    username = message.from_user.username or "N/A"
     f_name, l_name, email, dob = generate_task_details()
+
+    # Save details to Database for Dashboard View
+    try:
+        cursor.execute("UPDATE users SET assigned_email = ?, username = ?, status = 'Pending' WHERE user_id = ?", (email, username, user_id))
+        conn.commit()
+    except Exception as e:
+        print("DB Update Error:", e)
 
     task_msg = (
         "-------------------\n"
         f"First name: <code>{f_name}</code>\n"
         f"Last name: <code>{l_name}</code>\n"
         "-------------------\n"
-        f"Date of birth\n"
+        "Date of birth\n"
         f"<code>{dob}</code>\n"
         "-------------------\n"
         f"Email: <code>{email}</code>\n"
@@ -210,8 +219,9 @@ def assign_task(message):
     )
 
     inline_btn = InlineKeyboardMarkup()
-    inline_btn.add(InlineKeyboardButton("✅ Done", callback_data=f"done_{email}"))
+    inline_btn.add(InlineKeyboardButton("🟢 Done", callback_data=f"done_{email}"))
 
+    bot.send_message(message.chat.id, task_msg, parse_mode="HTML", reply_markup=inline_btn)
     bot.send_message(message.chat.id, task_msg, parse_mode="HTML", reply_markup=inline_btn)
 
 # 1. User "Done" dabaye -> Bot Screenshot maange
