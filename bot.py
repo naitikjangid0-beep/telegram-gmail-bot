@@ -206,7 +206,8 @@ def handle_done(call):
     user_confirm_msg = (
         "✅ <b>Submitted!</b> Your account will be verified shortly.\n\n"
         "⚠️ <b>Important Rule:</b>\n"
-        "Gmail banane ke baad usko apne device se logout karein."
+        "Gmail banane ke baad usko apne device se logout karein.\n\n"
+        "📸 <b>Next Step:</b> Ab aap bane hue Gmail account ka screenshot bhejiye!"
     )
     bot.send_message(call.message.chat.id, user_confirm_msg, parse_mode="HTML")
 
