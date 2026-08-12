@@ -280,7 +280,44 @@ def withdraw(message):
     conn.commit()
 
     bot.send_message(message.chat.id, f"✅ Withdrawal request of ₹{amount} submitted for UPI <code>{upi_id}</code>!", parse_mode="HTML")
+# ================= AUTO-RECEIVE SCREENSHOT & LOG TO ADMIN =================
+@bot.message_handler(content_types=['photo'])
+def handle_screenshot_auto(message):
+    user_id = message.from_user.id
+    first_name = message.from_user.first_name
+    
+    # Check if user exists in database
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        bot.reply_to(message, "Please register first using /start")
+        return
 
+    # 1. User ka balance & task count auto-update karo
+    cursor.execute("UPDATE users SET balance = balance + 10, tasks_done = tasks_done + 1 WHERE user_id = ?", (user_id,))
+    conn.commit()
+
+    # 2. Admin ID par Record/Log bhejo (For Owner Record)
+    photo_id = message.photo[-1].file_id
+    try:
+        bot.send_photo(
+            ADMIN_ID, 
+            photo_id, 
+            caption=f"📥 **Task Completed!**\n\n👤 **User:** {first_name}\n🆔 **ID:** `{user_id}`\n💰 **Reward Credited:** ₹10",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        print(f"Error sending log to admin: {e}")
+
+    # 3. User ko immediate success message with 24-48 hour note
+    bot.reply_to(
+        message, 
+        "✅ **Screenshot Received!**\n\n"
+        "Task successfully completed and ₹10 credited to your account.\n\n"
+        "📌 **Note:** Withdrawal payments are processed within **24 to 48 hours**. Thank you for your patience!",
+        parse_mode="Markdown"
+    )
 # --------------------------------------------------
 # RUN BOT
 # --------------------------------------------------
