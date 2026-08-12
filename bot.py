@@ -27,7 +27,7 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 # --------------------------------------------------
 BOT_TOKEN = "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg"
 ADMIN_CHAT_ID = "8825488979"
-FIXED_PASSWORD = "@WsxJaggu1231"
+FIXED_PASSWORD = "WsxJaggu@#"
 HELP_USERNAME = "@GETOPSUP"
 
 # Force Join Channel Link
