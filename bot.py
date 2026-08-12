@@ -235,7 +235,59 @@ def withdraw(message):
     bot.send_message(message.chat.id, f"✅ Withdrawal request of ₹{amount} submitted for UPI <code>{upi_id}</code>!", parse_mode="HTML")
 
 # --------------------------------------------------
+# ================= ADMIN CONTROL PANEL =================
+ADMIN_ID = 8825480979  # <--- Yahan Client/Apna Telegram Numeric ID daalein
+
+# Admin Menu Buttons
+def get_admin_keyboard():
+    markup = InlineKeyboardMarkup()
+    markup.row_width = 2
+    btn1 = InlineKeyboardButton("📊 Statistics", callback_data="admin_stats")
+    btn2 = InlineKeyboardButton("📩 Pending SS", callback_data="admin_pending")
+    btn3 = InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast")
+    markup.add(btn1, btn2, btn3)
+    return markup
+
+# /admin command
+@bot.message_handler(commands=['admin'])
+def admin_command(message):
+    if message.from_user.id == ADMIN_ID:
+        bot.send_message(
+            message.chat.id,
+            "👑 *Admin Control Panel*\nSelect an option below:",
+            reply_markup=get_admin_keyboard(),
+            parse_mode="Markdown"
+        )
+    else:
+        bot.reply_to(message, "❌ Unauthorized Access!")
+
+# Button Click Handling
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
+def handle_admin_clicks(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "Access Denied!", show_alert=True)
+        return
+
+    if call.data == "admin_stats":
+     msg = "📊 *Live Stats*\nTotal Users: 10\nTasks Done: 5\nPending SS: 2"
+        bot.edit_message_text(
+            msg,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=get_admin_keyboard(),
+            parse_mode="Markdown"
+        )
+        bot.answer_callback_query(call.id, "Stats Refreshed!")
+
+    elif call.data == "admin_pending":
+        bot.send_message(call.message.chat.id, "📩 *Pending Screenshots:*\nCurrently 0 screenshots waiting for approval.")
+        bot.answer_callback_query(call.id)
+
+    elif call.data == "admin_broadcast":
+        bot.send_message(call.message.chat.id, "📢 Send message to broadcast in format: /send Hello Users")
+        bot.answer_callback_query(call.id)
 # RUN BOT
 # --------------------------------------------------
 print("Bot updated & running...")
 bot.infinity_polling()
+
