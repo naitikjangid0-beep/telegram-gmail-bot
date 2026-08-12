@@ -21,7 +21,26 @@ import random
 import sqlite3
 import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-
+def add_user_to_db(user_id, first_name):
+    try:
+        conn = sqlite3.connect('database.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                first_name TEXT,
+                balance INTEGER DEFAULT 0,
+                tasks_done INTEGER DEFAULT 0
+            )
+        ''')
+        cursor.execute('''
+            INSERT OR IGNORE INTO users (user_id, first_name, balance, tasks_done) 
+            VALUES (?, ?, 0, 0)
+        ''', (user_id, first_name))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print("DB Error:", e)
 # --------------------------------------------------
 # CONFIGURATION SETUP
 # --------------------------------------------------
@@ -89,7 +108,7 @@ LAST_NAMES = ["Gupta", "Sharma", "Verma", "Singh", "Kumar", "Patel", "Joshi", "Y
 # --------------------------------------------------
 # DATABASE SETUP
 # --------------------------------------------------
-conn = sqlite3.connect('bot_database.db', check_same_thread=False)
+conn = sqlite3.connect('database.db', check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute('''
@@ -156,7 +175,7 @@ def start_message(message):
 
     cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users (user_id, name, balance, tasks_done) VALUES (?, ?, 0, 0)",
+        cursor.execute("INSERT INTO users (user_id, first_name, balance, tasks_done) VALUES (?, ?, 0, 0)",
                        (user_id, first_name))
         conn.commit()
 
