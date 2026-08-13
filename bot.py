@@ -1,14 +1,9 @@
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'database.db')
 import os
-from flask import Flask
+from app import app
 from threading import Thread
 
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is running live!"
 
 def run():
     port = int(os.environ.get("PORT", 10000))
