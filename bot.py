@@ -197,9 +197,13 @@ def assign_task(message):
     f_name, l_name, email, dob = generate_task_details()
 
     # Save details to Database for Dashboard View
-    try:
-        cursor.execute("UPDATE users SET assigned_email = ?, username = ?, status = 'Pending' WHERE user_id = ?", (email, username, user_id))
+        conn = sqlite3.connect('database.db')
+        c = conn.cursor()
+        first_name = message.from_user.first_name or "User"
+        c.execute("INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)", (user_id, first_name, username))
+        c.execute("UPDATE users SET assigned_email = ?, username = ?, status = 'Pending' WHERE user_id = ?", (email, username, user_id))
         conn.commit()
+        conn.close()
     except Exception as e:
         print("DB Update Error:", e)
 
