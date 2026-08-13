@@ -7,12 +7,11 @@ from flask import Flask, render_template_string, request, redirect, url_for, Res
 
 app = Flask(__name__)
 
-# Config
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg")
-DB_PATH = os.getenv("DB_PATH", "database.db")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, 'database.db')
 
 def send_telegram_msg(chat_id, text):
-    """Utility to send telegram notification to user from dashboard"""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
@@ -24,48 +23,6 @@ def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
-
-def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            first_name TEXT,
-            username TEXT,
-            balance REAL DEFAULT 0,
-            tasks_done INTEGER DEFAULT 0,
-            assigned_email TEXT,
-            status TEXT DEFAULT 'Pending'
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS withdrawals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            upi_id TEXT,
-            amount REAL,
-            status TEXT DEFAULT 'Pending'
-        )
-    ''')
-    
-    # Safe checks for missing columns
-    columns_to_add = [
-        ("username", "TEXT"),
-        ("assigned_email", "TEXT"),
-        ("status", "TEXT DEFAULT 'Pending'")
-    ]
-    
-    for col_name, col_type in columns_to_add:
-        try:
-            cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
-        except sqlite3.OperationalError:
-            pass
-
-    conn.commit()
-    conn.close()
-
-init_db()
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -100,13 +57,13 @@ HTML_TEMPLATE = """
             </div>
             <div class="col-md-3">
                 <div class="card card-stat bg-success text-white p-3">
-                    <h6>Total Tasks Submitted</h6>
+                    <h6>Total Tasks Approved</h6>
                     <h3 class="m-0">{{ total_tasks }}</h3>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="card card-stat bg-warning text-dark p-3">
-                    <h6>Pending Approvals</h6>
+                    <h6>Pending Task Approvals</h6>
                     <h3 class="m-0">{{ pending_count }}</h3>
                 </div>
             </div>
@@ -130,9 +87,9 @@ HTML_TEMPLATE = """
         <!-- SEARCH & USER TABLE -->
         <div class="table-responsive mb-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h4>📋 User Submissions</h4>
+                <h4>📋 User Submissions & Assigned Emails</h4>
                 <form method="GET" action="/" class="d-flex gap-2">
-                    <input type="text" name="search" class="form-control" placeholder="Search by ID, Name, Email" value="{{ search_query }}">
+                    <input type="text" name="search" class="form-control" placeholder="Search ID, Name, Email, UPI" value="{{ search_query }}">
                     <button type="submit" class="btn btn-secondary">Search</button>
                 </form>
             </div>
@@ -143,9 +100,10 @@ HTML_TEMPLATE = """
                         <th>Name</th>
                         <th>Username</th>
                         <th>Assigned Email</th>
-                        <th>Tasks</th>
+                        <th>UPI ID</th>
+                        <th>Tasks Approved</th>
                         <th>Balance</th>
-                        <th>Status</th>
+                        <th>Task Status</th>
                         <th>Action</th>
                     </tr>
                 </thead>
@@ -153,11 +111,12 @@ HTML_TEMPLATE = """
                     {% for user in users %}
                     <tr>
                         <td><code>{{ user['user_id'] }}</code></td>
-                        <td><b>{{ user['first_name'] }}</b></td>
-                        <td>{{ '@' + user['username'] if user['username'] else 'N/A' }}</td>
+                        <td><b>{{ user['first_name'] or 'N/A' }}</b></td>
+                        <td>{{ '@' + user['username'] if user['username'] and user['username'] != 'N/A' else 'N/A' }}</td>
                         <td><code>{{ user['assigned_email'] or 'Not Assigned' }}</code></td>
-                        <td>{{ user['tasks_done'] }}</td>
-                        <td>₹{{ user['balance'] }}</td>
+                        <td><b class="text-primary">{{ user['upi_id'] or 'Not Added' }}</b></td>
+                        <td>{{ user['tasks_done'] or 0 }}</td>
+                        <td>₹{{ user['balance'] or 0 }}</td>
                         <td>
                             {% if user['status'] == 'Approved' %}
                                 <span class="badge badge-approved">Approved</span>
@@ -183,7 +142,7 @@ HTML_TEMPLATE = """
             <table class="table table-hover align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th>ID</th>
+                        <th>Request ID</th>
                         <th>User ID</th>
                         <th>UPI ID</th>
                         <th>Amount</th>
@@ -226,8 +185,8 @@ def index():
     conn = get_db_connection()
     
     if search:
-        users = conn.execute("SELECT * FROM users WHERE LOWER(first_name) LIKE ? OR LOWER(assigned_email) LIKE ? OR CAST(user_id AS TEXT) LIKE ?", 
-                             (f'%{search}%', f'%{search}%', f'%{search}%')).fetchall()
+        users = conn.execute("SELECT * FROM users WHERE LOWER(first_name) LIKE ? OR LOWER(assigned_email) LIKE ? OR LOWER(upi_id) LIKE ? OR CAST(user_id AS TEXT) LIKE ?", 
+                             (f'%{search}%', f'%{search}%', f'%{search}%', f'%{search}%')).fetchall()
     else:
         users = conn.execute("SELECT * FROM users ORDER BY rowid DESC").fetchall()
 
@@ -235,7 +194,7 @@ def index():
     
     total_users = len(users)
     total_tasks = sum(u['tasks_done'] for u in users if u['tasks_done'])
-    pending_count = sum(1 for u in users if u['status'] == 'Pending' or not u['status'])
+    pending_count = sum(1 for u in users if u['status'] == 'Pending' and u['assigned_email'])
     pending_withdraws = sum(1 for w in withdrawals if w['status'] == 'Pending')
     
     conn.close()
@@ -285,14 +244,14 @@ def broadcast():
 def download_csv():
     conn = get_db_connection()
     cursor = conn.cursor()
-    users = cursor.execute("SELECT user_id, first_name, username, assigned_email, tasks_done, balance, status FROM users").fetchall()
+    users = cursor.execute("SELECT user_id, first_name, username, assigned_email, upi_id, tasks_done, balance, status FROM users").fetchall()
     conn.close()
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['User ID', 'First Name', 'Username', 'Assigned Email', 'Tasks Done', 'Balance (INR)', 'Status'])
+    writer.writerow(['User ID', 'First Name', 'Username', 'Assigned Email', 'UPI ID', 'Tasks Done', 'Balance (INR)', 'Status'])
     for u in users:
-        writer.writerow([u['user_id'], u['first_name'], u['username'], u['assigned_email'], u['tasks_done'], u['balance'], u['status']])
+        writer.writerow([u['user_id'], u['first_name'], u['username'], u['assigned_email'], u['upi_id'], u['tasks_done'], u['balance'], u['status']])
         
     output.seek(0)
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=gmail_bot_users.csv"})
