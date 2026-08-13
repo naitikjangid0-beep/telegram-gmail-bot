@@ -288,11 +288,12 @@ def process_upi(message):
     upi_id = message.text.strip()
     user_id = message.from_user.id
 
+    conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # Withdrawals table ensure karna
+        # 1. Withdrawals Table Ensure
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS withdrawals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -303,27 +304,34 @@ def process_upi(message):
             )
         ''')
 
-        # Safe Column Add
+        # 2. Users Table Update
         try:
-            cursor.execute("ALTER TABLE users ADD COLUMN upi_id TEXT")
-        except sqlite3.OperationalError:
-            pass
-        
-        # User & Withdrawal update
-        cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
-        cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", (user_id, upi_id, 0, 'Pending'))
+            cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
+        except Exception as e:
+            print("Users update warning:", e)
+            
+        # 3. Insert Withdrawal Request
+        cursor.execute(
+            "INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", 
+            (user_id, upi_id, 0.0, 'Pending')
+        )
         
         conn.commit()
-        conn.close()
 
+        # Success Response To Telegram
         bot.send_message(
             message.chat.id, 
             f"💳 **UPI ID Saved Successfully!**\n\nYour UPI: <code>{upi_id}</code>",
             parse_mode="HTML"
         )
+
     except Exception as e:
         print("UPI Save Error:", e)
-        bot.send_message(message.chat.id, f"❌ Error saving UPI: {e}")
+        bot.send_message(message.chat.id, f"❌ Error saving UPI: {str(e)}")
+    
+    finally:
+        if conn:
+            conn.close()
    
 @bot.message_handler(func=lambda message: message.text == "💬 Help")
 def help_msg(message):
