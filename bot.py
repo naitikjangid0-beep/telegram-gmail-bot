@@ -9,7 +9,7 @@ from app import app
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'database.db')
 
-# Keep Alive Thread for Flask
+# Keep-alive thread for Flask Server
 def run():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
@@ -21,9 +21,7 @@ def keep_alive():
 
 keep_alive()
 
-# --------------------------------------------------
 # CONFIGURATION SETUP
-# --------------------------------------------------
 BOT_TOKEN = "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg"
 ADMIN_CHAT_ID = "8825488979"
 ADMIN_ID = 8825480979
@@ -40,7 +38,6 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # 1. Base Users Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -54,7 +51,6 @@ def init_db():
         )
     ''')
     
-    # 2. Base Withdrawals Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS withdrawals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +61,7 @@ def init_db():
         )
     ''')
 
-    # 3. AUTO-FIX: Force Add Missing Columns (Agar purani DB file hai)
+    # Auto-add missing columns safely
     columns_to_check = [
         ("upi_id", "TEXT"),
         ("assigned_email", "TEXT"),
@@ -76,7 +72,7 @@ def init_db():
         try:
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
         except sqlite3.OperationalError:
-            pass # Pehle se column hoga toh skip ho jayega
+            pass
 
     conn.commit()
     conn.close()
@@ -136,6 +132,7 @@ def start_message(message):
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)", (user_id, first_name, username))
+        c.execute("UPDATE users SET first_name = ?, username = ? WHERE user_id = ?", (first_name, username, user_id))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -250,19 +247,18 @@ def withdraw(message):
         cursor = conn.cursor()
         cursor.execute("SELECT balance, upi_id FROM users WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
-        conn.close()
 
         if not row or row[0] <= 0:
             bot.send_message(message.chat.id, "⚠️ Balance insufficient or ₹0 balance.")
+            conn.close()
             return
         if not row[1]:
             bot.send_message(message.chat.id, "⚠️ Please add UPI ID first using '🏦 Add UPI'.")
+            conn.close()
             return
 
         amount, upi_id = row[0], row[1]
 
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
         cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, 'Pending')", (user_id, upi_id, amount))
         cursor.execute("UPDATE users SET balance = 0 WHERE user_id = ?", (user_id,))
         conn.commit()
