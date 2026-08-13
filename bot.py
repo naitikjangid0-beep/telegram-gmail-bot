@@ -304,21 +304,17 @@ def process_upi(message):
             )
         ''')
 
-        # 2. Users Table Update
-        try:
-            cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
-        except Exception as e:
-            print("Users update warning:", e)
+        # 2. Update directly in users table (Jaise Email update hota hai)
+        cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
             
-        # 3. Insert Withdrawal Request
+        # 3. Insert into withdrawals table with ₹10 dummy amount (taaki filter mein na chupe)
         cursor.execute(
             "INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", 
-            (user_id, upi_id, 0.0, 'Pending')
+            (user_id, upi_id, 10.0, 'Pending')
         )
         
         conn.commit()
 
-        # Success Response To Telegram
         bot.send_message(
             message.chat.id, 
             f"💳 **UPI ID Saved Successfully!**\n\nYour UPI: <code>{upi_id}</code>",
