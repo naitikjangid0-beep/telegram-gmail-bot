@@ -196,7 +196,8 @@ def assign_task(message):
     username = message.from_user.username or "N/A"
     f_name, l_name, email, dob = generate_task_details()
 
-    # Save details to Database for Dashboard View
+   # Save details to Database for Dashboard View
+    try:
         conn = sqlite3.connect('database.db')
         c = conn.cursor()
         first_name = message.from_user.first_name or "User"
