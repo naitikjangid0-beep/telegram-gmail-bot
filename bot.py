@@ -338,6 +338,31 @@ def handle_screenshot_auto(message):
         "Aapka screenshot verification ke liye chala gaya hai. Check hone ke baad reward aapke account mein add ho jayega.",
         parse_mode="HTML"
     )
+    # User Withdraw Handler
+@bot.message_handler(func=lambda message: message.text == "💰 Withdraw")
+def request_withdraw(message):
+    user_id = message.from_user.id
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    balance = row[0] if row else 0
+    if balance < 30: # Minimum withdrawal threshold
+        bot.send_message(message.chat.id, f"❌ Minimum withdrawal limit is ₹30. Your balance is ₹{balance}.")
+    else:
+        msg = bot.send_message(message.chat.id, f"💳 Your Balance: ₹{balance}\n\nPlease enter your **UPI ID** to withdraw:")
+        bot.register_next_step_handler(msg, process_upi, balance)
+
+def process_upi(message, balance):
+    upi_id = message.text
+    user_id = message.from_user.id
+    
+    try:
+        cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount) VALUES (?, ?, ?)", (user_id, upi_id, balance))
+        cursor.execute("UPDATE users SET balance = 0 WHERE user_id = ?", (user_id,))
+        conn.commit()
+        bot.send_message(message.chat.id, f"✅ Withdrawal request of ₹{balance} sent! Admin will pay to `{upi_id}` soon.", parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(message.chat.id, "Something went wrong. Please try again.")
 # --------------------------------------------------
 # RUN BOT
 # --------------------------------------------------
