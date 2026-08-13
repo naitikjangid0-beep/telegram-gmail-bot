@@ -293,6 +293,7 @@ def process_upi(message):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
+        # 1. Withdrawals table create/ensure
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS withdrawals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -303,7 +304,13 @@ def process_upi(message):
             )
         ''')
 
-        cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
+        # 2. Users table update (Isse top panel me email ke paas UPI aayega)
+        try:
+            cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
+        except Exception as u_err:
+            print("Users table update error:", u_err)
+            
+        # 3. Withdrawals table insert (Isse bottom withdrawal requests me aayega)
         cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", (user_id, upi_id, 0, 'Pending'))
         
         conn.commit()
