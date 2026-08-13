@@ -110,20 +110,22 @@ LAST_NAMES = ["Gupta", "Sharma", "Verma", "Singh", "Kumar", "Patel", "Joshi", "Y
 # --------------------------------------------------
 # DATABASE SETUP
 # --------------------------------------------------
-conn = sqlite3.connect('database.db', check_same_thread=False)
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
-    name TEXT,
+    first_name TEXT,
+    username TEXT,
+    assigned_email TEXT,
+    status TEXT DEFAULT 'Pending',
     upi_id TEXT,
     balance REAL DEFAULT 0,
     tasks_done INTEGER DEFAULT 0
 )
 ''')
 conn.commit()
-
 # Helper function to generate dynamic Gmail details
 def generate_task_details():
     f_name = random.choice(FIRST_NAMES)
@@ -200,7 +202,7 @@ def assign_task(message):
 
    # Save details to Database for Dashboard View
     try:
-        conn = sqlite3.connect('DB_PATH)
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         first_name = message.from_user.first_name or "User"
         c.execute("INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)", (user_id, first_name, username))
