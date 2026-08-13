@@ -1,3 +1,5 @@
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, 'database.db')
 import os
 from flask import Flask
 from threading import Thread
@@ -23,7 +25,7 @@ import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 def add_user_to_db(user_id, first_name):
     try:
-        conn = sqlite3.connect('database.db')
+       conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -198,7 +200,7 @@ def assign_task(message):
 
    # Save details to Database for Dashboard View
     try:
-        conn = sqlite3.connect('database.db')
+        conn = sqlite3.connect('DB_PATH)
         c = conn.cursor()
         first_name = message.from_user.first_name or "User"
         c.execute("INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)", (user_id, first_name, username))
