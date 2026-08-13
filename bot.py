@@ -279,7 +279,7 @@ def balance(message):
 def my_accounts(message):
     bot.send_message(message.chat.id, "📁 Total Accounts Submitted: 0")
 
-@bot.message_handler(func=lambda message: message.text == "🏦 Add UPI")
+@bot.message_handler(func=lambda message: "Add UPI" in message.text)
 def add_upi(message):
     msg = bot.send_message(message.chat.id, "📝 Please send your UPI ID:")
     bot.register_next_step_handler(msg, process_upi)
@@ -293,7 +293,7 @@ def process_upi(message):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # 1. Withdrawals table create/ensure
+        # 1. Withdrawals Table Ensure
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS withdrawals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -304,14 +304,14 @@ def process_upi(message):
             )
         ''')
 
-        # 2. Users table update (Isse top panel me email ke paas UPI aayega)
+        # 2. Update users table
         try:
             cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
         except Exception as u_err:
-            print("Users table update error:", u_err)
-            
-        # 3. Withdrawals table insert (Isse bottom withdrawal requests me aayega)
-        cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", (user_id, upi_id, 0, 'Pending'))
+            print("Users update error:", u_err)
+
+        # 3. Insert withdrawal request
+        cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", (user_id, upi_id, 0.0, 'Pending'))
         
         conn.commit()
 
