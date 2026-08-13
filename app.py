@@ -7,7 +7,7 @@ from flask import Flask, render_template_string, request, redirect, url_for, Res
 app = Flask(__name__)
 
 # Config - Apne Bot ka Token Yahan Rehna Chahiye
-BOT_TOKEN = "7724217112:AAG-x..."  # Note: Isko apne real BOT_TOKEN se verify kar lena
+BOT_TOKEN = "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg"  # Note: Isko apne real BOT_TOKEN se verify kar lena
 
 def send_telegram_msg(chat_id, text):
     """Utility to send telegram notification to user from dashboard"""
