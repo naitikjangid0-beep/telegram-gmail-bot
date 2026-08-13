@@ -293,7 +293,6 @@ def process_upi(message):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # 1. Withdrawals Table Ensure
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS withdrawals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -304,14 +303,8 @@ def process_upi(message):
             )
         ''')
 
-        # 2. Update directly in users table (Jaise Email update hota hai)
         cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
-            
-        # 3. Insert into withdrawals table with ₹10 dummy amount (taaki filter mein na chupe)
-        cursor.execute(
-            "INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", 
-            (user_id, upi_id, 10.0, 'Pending')
-        )
+        cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", (user_id, upi_id, 0, 'Pending'))
         
         conn.commit()
 
@@ -320,11 +313,9 @@ def process_upi(message):
             f"💳 **UPI ID Saved Successfully!**\n\nYour UPI: <code>{upi_id}</code>",
             parse_mode="HTML"
         )
-
     except Exception as e:
         print("UPI Save Error:", e)
-        bot.send_message(message.chat.id, f"❌ Error saving UPI: {str(e)}")
-    
+        bot.send_message(message.chat.id, f"❌ Error saving UPI: {e}")
     finally:
         if conn:
             conn.close()
