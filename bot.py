@@ -285,13 +285,14 @@ def add_upi(message):
     bot.register_next_step_handler(msg, process_upi)
 
 def process_upi(message):
-    upi_id = message.text.strip()
+ upi_id = message.text.strip()
     user_id = message.from_user.id
 
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
+        # Withdrawals table ensure karna
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS withdrawals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -301,7 +302,14 @@ def process_upi(message):
                 status TEXT DEFAULT 'Pending'
             )
         ''')
+
+        # Safe Column Add
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN upi_id TEXT")
+        except sqlite3.OperationalError:
+            pass
         
+        # User & Withdrawal update
         cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
         cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", (user_id, upi_id, 0, 'Pending'))
         
@@ -315,11 +323,8 @@ def process_upi(message):
         )
     except Exception as e:
         print("UPI Save Error:", e)
-        bot.send_message(message.chat.id, "❌ Something went wrong while saving UPI. Please try again.")
-    except Exception as e:
-        print("UPI Save Error:", e)
-        bot.send_message(message.chat.id, "❌ Something went wrong while saving UPI. Please try again.")
-
+        bot.send_message(message.chat.id, f"❌ Error saving UPI: {e}")
+   
 @bot.message_handler(func=lambda message: message.text == "💬 Help")
 def help_msg(message):
     bot.send_message(message.chat.id, f"💬 Support: {HELP_USERNAME}")
