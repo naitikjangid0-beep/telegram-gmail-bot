@@ -39,6 +39,8 @@ LAST_NAMES = ["Gupta", "Sharma", "Verma", "Singh", "Kumar", "Patel", "Joshi", "Y
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    
+    # 1. Base Users Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -51,6 +53,8 @@ def init_db():
             tasks_done INTEGER DEFAULT 0
         )
     ''')
+    
+    # 2. Base Withdrawals Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS withdrawals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,6 +64,20 @@ def init_db():
             status TEXT DEFAULT 'Pending'
         )
     ''')
+
+    # 3. AUTO-FIX: Force Add Missing Columns (Agar purani DB file hai)
+    columns_to_check = [
+        ("upi_id", "TEXT"),
+        ("assigned_email", "TEXT"),
+        ("status", "TEXT DEFAULT 'Pending'"),
+        ("username", "TEXT")
+    ]
+    for col_name, col_type in columns_to_check:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            pass # Pehle se column hoga toh skip ho jayega
+
     conn.commit()
     conn.close()
 
