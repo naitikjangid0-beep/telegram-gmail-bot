@@ -302,17 +302,20 @@ def process_upi(message):
             )
         ''')
         
-         cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
-         cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", (user_id, upi_id, 0, 'Pending'))
+        cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
+        cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", (user_id, upi_id, 0, 'Pending'))
         
-         conn.commit()
-         conn.close()
+        conn.commit()
+        conn.close()
 
-         bot.send_message(
+        bot.send_message(
             message.chat.id, 
             f"💳 **UPI ID Saved Successfully!**\n\nYour UPI: <code>{upi_id}</code>",
             parse_mode="HTML"
         )
+    except Exception as e:
+        print("UPI Save Error:", e)
+        bot.send_message(message.chat.id, "❌ Something went wrong while saving UPI. Please try again.")
     except Exception as e:
         print("UPI Save Error:", e)
         bot.send_message(message.chat.id, "❌ Something went wrong while saving UPI. Please try again.")
