@@ -25,19 +25,23 @@ import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 def add_user_to_db(user_id, first_name):
     try:
-       conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
                 first_name TEXT,
-                balance INTEGER DEFAULT 0,
+                username TEXT,
+                assigned_email TEXT,
+                status TEXT DEFAULT 'Pending',
+                upi_id TEXT,
+                balance REAL DEFAULT 0,
                 tasks_done INTEGER DEFAULT 0
             )
         ''')
         cursor.execute('''
-            INSERT OR IGNORE INTO users (user_id, first_name, balance, tasks_done) 
-            VALUES (?, ?, 0, 0)
+            INSERT OR IGNORE INTO users (user_id, first_name)
+            VALUES (?, ?)
         ''', (user_id, first_name))
         conn.commit()
         conn.close()
