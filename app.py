@@ -1,25 +1,27 @@
 import sqlite3
 import csv
 import io
+import os
 import requests
 from flask import Flask, render_template_string, request, redirect, url_for, Response
 
 app = Flask(__name__)
 
-# Config - Apne Bot ka Token Yahan Rehna Chahiye
-BOT_TOKEN = "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg"  # Note: Isko apne real BOT_TOKEN se verify kar lena
+# Config
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg")
+DB_PATH = os.getenv("DB_PATH", "database.db")
 
 def send_telegram_msg(chat_id, text):
     """Utility to send telegram notification to user from dashboard"""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
-        requests.post(url, data=data)
+        requests.post(url, data=data, timeout=5)
     except Exception as e:
         print("Telegram Send Error:", e)
 
 def get_db_connection():
-    conn = sqlite3.connect('database.db')
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -46,6 +48,20 @@ def init_db():
             status TEXT DEFAULT 'Pending'
         )
     ''')
+    
+    # Safe checks for missing columns
+    columns_to_add = [
+        ("username", "TEXT"),
+        ("assigned_email", "TEXT"),
+        ("status", "TEXT DEFAULT 'Pending'")
+    ]
+    
+    for col_name, col_type in columns_to_add:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+
     conn.commit()
     conn.close()
 
@@ -282,4 +298,5 @@ def download_csv():
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=gmail_bot_users.csv"})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
