@@ -292,7 +292,6 @@ def process_upi(message):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # Withdrawals table ensure karna
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS withdrawals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -303,14 +302,13 @@ def process_upi(message):
             )
         ''')
         
-        # User record mein UPI update karna
-      cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
-      cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", (user_id, upi_id, 0, 'Pending'))
+                cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
+                cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, ?)", (user_id, upi_id, 0, 'Pending'))
         
-        conn.commit()
-        conn.close()
+                conn.commit()
+                conn.close()
 
-        bot.send_message(
+                bot.send_message(
             message.chat.id, 
             f"💳 **UPI ID Saved Successfully!**\n\nYour UPI: <code>{upi_id}</code>",
             parse_mode="HTML"
