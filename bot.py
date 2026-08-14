@@ -28,9 +28,6 @@ CHANNEL_LINK = "https://t.me/+lOpg8sGDP7YyNWU1"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Temporary memory to store current email until screenshot is sent
-user_active_emails = {}
-
 FIRST_NAMES = ["Pooja", "Rahul", "Neha", "Amit", "Priya", "Suresh", "Kiran", "Vikram", "Anjali", "Rohan"]
 LAST_NAMES = ["Gupta", "Sharma", "Verma", "Singh", "Kumar", "Patel", "Joshi", "Yadav", "Mehta", "Das"]
 
@@ -138,13 +135,11 @@ def assign_task(message):
     first_name = message.from_user.first_name or "User"
     f_name, l_name, email, dob = generate_task_details()
 
-    # Store in temp memory until screenshot is uploaded
-    user_active_emails[user_id] = email
-
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)", (user_id, first_name))
+        c.execute("INSERT INTO tasks (user_id, assigned_email, status) VALUES (?, ?, 'Pending')", (user_id, email))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -181,20 +176,18 @@ def handle_done(call):
 def handle_screenshot(message):
     user_id = message.from_user.id
     photo_id = message.photo[-1].file_id
-    assigned_email = user_active_emails.get(user_id, "Unknown Email")
 
-    # Insert into task table ONLY NOW (When SS is uploaded)
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO tasks (user_id, assigned_email, screenshot_id, status) VALUES (?, ?, ?, 'Pending')", 
-                       (user_id, assigned_email, photo_id))
+        # Direct Transfer: Update latest pending task with screenshot ID
+        cursor.execute("UPDATE tasks SET screenshot_id = ? WHERE id = (SELECT MAX(id) FROM tasks WHERE user_id = ?)", (photo_id, user_id))
         conn.commit()
         conn.close()
     except Exception as e:
-        print("Screenshot Insert Error:", e)
+        print("Screenshot Update Error:", e)
 
-    bot.reply_to(message, "✅ <b>Task Submitted!</b> Pending admin approval.", parse_mode="HTML")
+    bot.reply_to(message, "✅ <b>Task Submitted!</b> Transferred to admin panel.", parse_mode="HTML")
 
 @bot.message_handler(func=lambda message: "Add UPI" in message.text)
 def add_upi(message):
