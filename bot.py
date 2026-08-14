@@ -4,13 +4,10 @@ import sqlite3
 import telebot
 from threading import Thread
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from app import app
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'database.db')
+from app import app, DB_PATH
 
 def run():
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
@@ -21,7 +18,6 @@ def keep_alive():
 keep_alive()
 
 BOT_TOKEN = "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg"
-ADMIN_CHAT_ID = "8825488979"
 FIXED_PASSWORD = "WsxJaggu@#"
 HELP_USERNAME = "@GETOPSUP"
 CHANNEL_LINK = "https://t.me/+lOpg8sGDP7YyNWU1"
@@ -106,7 +102,7 @@ def send_main_menu(chat_id, first_name):
 def start_message(message):
     user_id = message.from_user.id
     first_name = message.from_user.first_name or "User"
-    username = message.from_user.username or "N/A"
+    username = message.from_user.username or ""
 
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -133,12 +129,14 @@ def check_join_callback(call):
 def assign_task(message):
     user_id = message.from_user.id
     first_name = message.from_user.first_name or "User"
+    username = message.from_user.username or ""
     f_name, l_name, email, dob = generate_task_details()
 
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)", (user_id, first_name))
+        c.execute("INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)", (user_id, first_name, username))
+        c.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
         c.execute("INSERT INTO tasks (user_id, assigned_email, status) VALUES (?, ?, 'Pending')", (user_id, email))
         conn.commit()
         conn.close()
@@ -180,14 +178,19 @@ def handle_screenshot(message):
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        # Direct Transfer: Update latest pending task with screenshot ID
         cursor.execute("UPDATE tasks SET screenshot_id = ? WHERE id = (SELECT MAX(id) FROM tasks WHERE user_id = ?)", (photo_id, user_id))
         conn.commit()
         conn.close()
     except Exception as e:
         print("Screenshot Update Error:", e)
 
-    bot.reply_to(message, "✅ <b>Task Submitted!</b> Transferred to admin panel.", parse_mode="HTML")
+    reply_text = (
+        "✅ <b>Your task submitted!</b>\n"
+        "Status: <b>Pending</b>\n\n"
+        "📌 <b>NOTE:</b>\n"
+        "<i>Apne device se Gmail account ko logout kar dein aur payment ke liye <b>24-48 hours</b> wait karein.</i>"
+    )
+    bot.reply_to(message, reply_text, parse_mode="HTML")
 
 @bot.message_handler(func=lambda message: "Add UPI" in message.text)
 def add_upi(message):
