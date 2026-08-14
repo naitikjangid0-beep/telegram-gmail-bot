@@ -9,9 +9,15 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg")
 
-# Persistent Database File Path
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'database.db')
+# Safe Permanent Database Path for Render Disk or Fallback Local
+PERSISTENT_DIR = "/var/data"
+if not os.path.exists(PERSISTENT_DIR):
+    try:
+        os.makedirs(PERSISTENT_DIR, exist_ok=True)
+    except Exception:
+        PERSISTENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DB_PATH = os.path.join(PERSISTENT_DIR, 'database.db')
 
 def send_telegram_msg(chat_id, text):
     try:
