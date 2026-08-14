@@ -9,8 +9,8 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg")
 
-# Persistent Database Location (Prevents data loss on restart)
-BASE_DIR = os.path.dirname(os.abspath(__file__))
+# Persistent Database File Path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'database.db')
 
 def send_telegram_msg(chat_id, text):
@@ -102,8 +102,7 @@ HTML_TEMPLATE = """
                 <small class="text-muted">Live Screenshot Sync & Search Panel</small>
             </div>
             <div class="d-flex gap-2 align-items-center">
-                <!-- SEARCH BAR -->
-                <input type="text" id="searchInput" onkeyup="filterTables()" class="form-control form-control-sm" style="width: 230px;" placeholder="🔍 Search User, ID, Email...">
+                <input type="text" id="searchInput" onkeyup="filterTables()" class="form-control form-control-sm" style="width: 240px;" placeholder="🔍 Search Name, @Username, ID...">
                 <a href="/download-csv" class="btn btn-sm btn-outline-dark fw-semibold shadow-sm"><i class="bi bi-file-earmark-spreadsheet me-1"></i>CSV Export</a>
             </div>
         </div>
@@ -111,7 +110,7 @@ HTML_TEMPLATE = """
         <div class="row g-3 mb-4">
             <div class="col-6 col-lg-3">
                 <div class="card card-stat bg-white p-3 border-start border-4 border-primary">
-                    <div class="text-muted small fw-bold">TOTAL USERS</div>
+                    <div class="text-muted small fw-bold">TOTAL REGISTERED USERS</div>
                     <div class="fs-2 fw-bold text-dark mt-1">{{ total_users }}</div>
                 </div>
             </div>
@@ -135,7 +134,7 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <!-- TASKS TABLE (Data transferred after SS upload) -->
+        <!-- TASKS TABLE -->
         <div class="table-card">
             <h5 class="fw-bold mb-3"><i class="bi bi-card-image text-primary me-2"></i>Submitted Tasks (With Screenshots)</h5>
             <div class="table-responsive">
@@ -156,7 +155,7 @@ HTML_TEMPLATE = """
                         <tr>
                             <td><b>#{{ task['id'] }}</b></td>
                             <td>
-                                <div class="fw-bold">{{ task['first_name'] or 'N/A' }}</div>
+                                <div class="fw-bold">{{ task['first_name'] or 'User' }}</div>
                                 <div><small class="text-primary fw-semibold">@{{ task['username'] if task['username'] else 'no_username' }}</small></div>
                                 <code>{{ task['user_id'] }}</code>
                             </td>
@@ -215,8 +214,8 @@ HTML_TEMPLATE = """
                         <tr>
                             <td><code>{{ u['user_id'] }}</code></td>
                             <td>
-                                <b>{{ u['first_name'] }}</b><br>
-                                <small class="text-primary">@{{ u['username'] if u['username'] else 'no_username' }}</small>
+                                <b>{{ u['first_name'] or 'User' }}</b><br>
+                                <small class="text-primary fw-semibold">@{{ u['username'] if u['username'] else 'no_username' }}</small>
                             </td>
                             <td><span class="text-primary fw-semibold">{{ u['upi_id'] or 'Not Set' }}</span></td>
                             <td><span class="badge bg-light text-dark border">{{ u['tasks_done'] }}</span></td>
@@ -323,7 +322,6 @@ def index():
     conn = get_db_connection()
     users = conn.execute("SELECT * FROM users ORDER BY rowid DESC").fetchall()
     
-    # Task table shows entries with screenshot, joining username
     tasks = conn.execute("""
         SELECT tasks.*, users.first_name, users.username 
         FROM tasks 
