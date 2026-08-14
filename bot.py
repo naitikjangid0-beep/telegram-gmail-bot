@@ -9,7 +9,6 @@ from app import app
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'database.db')
 
-# Keep-alive thread for Flask Server
 def run():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
@@ -21,7 +20,6 @@ def keep_alive():
 
 keep_alive()
 
-# CONFIGURATION SETUP
 BOT_TOKEN = "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg"
 ADMIN_CHAT_ID = "8825488979"
 ADMIN_ID = 8825480979
@@ -37,7 +35,6 @@ LAST_NAMES = ["Gupta", "Sharma", "Verma", "Singh", "Kumar", "Patel", "Joshi", "Y
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -47,28 +44,31 @@ def init_db():
             status TEXT DEFAULT 'Pending',
             upi_id TEXT,
             balance REAL DEFAULT 0,
-            tasks_done INTEGER DEFAULT 0
+            tasks_done INTEGER DEFAULT 0,
+            last_screenshot_id TEXT,
+            submission_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS withdrawals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             upi_id TEXT,
             amount REAL,
-            status TEXT DEFAULT 'Pending'
+            status TEXT DEFAULT 'Pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
-    # Auto-add missing columns safely
-    columns_to_check = [
+    columns = [
+        ("last_screenshot_id", "TEXT"),
+        ("submission_time", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ("upi_id", "TEXT"),
         ("assigned_email", "TEXT"),
         ("status", "TEXT DEFAULT 'Pending'"),
         ("username", "TEXT")
     ]
-    for col_name, col_type in columns_to_check:
+    for col_name, col_type in columns:
         try:
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
         except sqlite3.OperationalError:
@@ -111,16 +111,7 @@ def send_main_menu(chat_id, first_name):
         KeyboardButton("💬 Help"),
         KeyboardButton("🏧 Withdraw")
     )
-
-    bot.send_message(
-        chat_id,
-        f"Hi {first_name}! Welcome back.",
-        reply_markup=markup
-    )
-
-# --------------------------------------------------
-# BOT HANDLERS
-# --------------------------------------------------
+    bot.send_message(chat_id, f"Hi {first_name}! Welcome back.", reply_markup=markup)
 
 @bot.message_handler(commands=['start'])
 def start_message(message):
@@ -183,7 +174,6 @@ def assign_task(message):
 
     inline_btn = InlineKeyboardMarkup()
     inline_btn.add(InlineKeyboardButton("🟢 Done", callback_data=f"done_{email}"))
-
     bot.send_message(message.chat.id, task_msg, parse_mode="HTML", reply_markup=inline_btn)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("done_"))
@@ -198,6 +188,17 @@ def handle_done(call):
 def handle_screenshot(message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name or "User"
+    photo_id = message.photo[-1].file_id
+
+    # Save screenshot ID to DB for Panel viewing
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET last_screenshot_id = ?, status = 'Pending' WHERE user_id = ?", (photo_id, user_id))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print("Screenshot DB Error:", e)
 
     bot.reply_to(
         message, 
@@ -208,7 +209,6 @@ def handle_screenshot(message):
     )
 
     if ADMIN_CHAT_ID:
-        photo_id = message.photo[-1].file_id
         admin_text = f"📥 <b>NEW SUBMISSION</b>\n👤 User: {user_name} (<code>{user_id}</code>)\n💰 Reward: ₹10 Pending"
         try:
             bot.send_photo(ADMIN_CHAT_ID, photo_id, caption=admin_text, parse_mode="HTML")
@@ -302,8 +302,5 @@ def rewards_info(message):
 def help_msg(message):
     bot.send_message(message.chat.id, f"💬 Support: {HELP_USERNAME}")
 
-# --------------------------------------------------
-# RUN BOT
-# --------------------------------------------------
 print("Bot updated & running...")
 bot.infinity_polling()
