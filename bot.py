@@ -1,21 +1,11 @@
 import os
 import random
 import sqlite3
+import time
 import telebot
 from threading import Thread
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from app import app, DB_PATH
-
-def run():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.daemon = True
-    t.start()
-
-keep_alive()
 
 BOT_TOKEN = "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg"
 FIXED_PASSWORD = "WsxJaggu@#"
@@ -26,44 +16,6 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 FIRST_NAMES = ["Pooja", "Rahul", "Neha", "Amit", "Priya", "Suresh", "Kiran", "Vikram", "Anjali", "Rohan"]
 LAST_NAMES = ["Gupta", "Sharma", "Verma", "Singh", "Kumar", "Patel", "Joshi", "Yadav", "Mehta", "Das"]
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            first_name TEXT,
-            username TEXT,
-            upi_id TEXT,
-            balance REAL DEFAULT 0,
-            tasks_done INTEGER DEFAULT 0
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            assigned_email TEXT,
-            screenshot_id TEXT,
-            status TEXT DEFAULT 'Pending',
-            submission_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS withdrawals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            upi_id TEXT,
-            amount REAL,
-            status TEXT DEFAULT 'Pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-init_db()
 
 def generate_task_details():
     f_name = random.choice(FIRST_NAMES)
@@ -265,5 +217,19 @@ def rewards_info(message):
 def help_msg(message):
     bot.send_message(message.chat.id, f"💬 Support: {HELP_USERNAME}")
 
-print("Bot Running...")
-bot.infinity_polling()
+def start_bot_polling():
+    while True:
+        try:
+            bot.polling(none_stop=True, timeout=30)
+        except Exception as e:
+            print("Bot Polling Error, retrying...", e)
+            time.sleep(5)
+
+# Start Bot Thread
+bot_thread = Thread(target=start_bot_polling)
+bot_thread.daemon = True
+bot_thread.start()
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
