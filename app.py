@@ -8,7 +8,9 @@ from flask import Flask, render_template_string, request, redirect, url_for, Res
 app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg")
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Persistent Database Location (Prevents data loss on restart)
+BASE_DIR = os.path.dirname(os.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'database.db')
 
 def send_telegram_msg(chat_id, text):
@@ -94,20 +96,22 @@ HTML_TEMPLATE = """
 </head>
 <body class="p-3 p-md-4">
     <div class="container-fluid max-width-1400">
-        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom gap-2">
             <div>
                 <h2 class="fw-bold text-dark mb-0"><i class="bi bi-speedometer2 text-primary me-2"></i>Multi-Task Admin Panel</h2>
-                <small class="text-muted">Live Screenshot Sync Panel</small>
+                <small class="text-muted">Live Screenshot Sync & Search Panel</small>
             </div>
-            <div>
-                <a href="/download-csv" class="btn btn-outline-dark fw-semibold shadow-sm"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Export CSV Data</a>
+            <div class="d-flex gap-2 align-items-center">
+                <!-- SEARCH BAR -->
+                <input type="text" id="searchInput" onkeyup="filterTables()" class="form-control form-control-sm" style="width: 230px;" placeholder="🔍 Search User, ID, Email...">
+                <a href="/download-csv" class="btn btn-sm btn-outline-dark fw-semibold shadow-sm"><i class="bi bi-file-earmark-spreadsheet me-1"></i>CSV Export</a>
             </div>
         </div>
 
         <div class="row g-3 mb-4">
             <div class="col-6 col-lg-3">
                 <div class="card card-stat bg-white p-3 border-start border-4 border-primary">
-                    <div class="text-muted small fw-bold">TOTAL REGISTERED USERS</div>
+                    <div class="text-muted small fw-bold">TOTAL USERS</div>
                     <div class="fs-2 fw-bold text-dark mt-1">{{ total_users }}</div>
                 </div>
             </div>
@@ -135,11 +139,11 @@ HTML_TEMPLATE = """
         <div class="table-card">
             <h5 class="fw-bold mb-3"><i class="bi bi-card-image text-primary me-2"></i>Submitted Tasks (With Screenshots)</h5>
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
+                <table class="table table-hover align-middle mb-0 searchable-table">
                     <thead class="table-light">
                         <tr>
                             <th>Task ID</th>
-                            <th>User Details</th>
+                            <th>User Details & Username</th>
                             <th>Submitted Email</th>
                             <th>Proof Screenshot</th>
                             <th>Status</th>
@@ -153,12 +157,13 @@ HTML_TEMPLATE = """
                             <td><b>#{{ task['id'] }}</b></td>
                             <td>
                                 <div class="fw-bold">{{ task['first_name'] or 'N/A' }}</div>
+                                <div><small class="text-primary fw-semibold">@{{ task['username'] if task['username'] else 'no_username' }}</small></div>
                                 <code>{{ task['user_id'] }}</code>
                             </td>
                             <td><code>{{ task['assigned_email'] }}</code></td>
                             <td>
                                 {% if task['screenshot_id'] %}
-                                <button class="btn btn-sm btn-outline-primary action-btn" onclick="openPhotoModal('{{ task['screenshot_id'] }}', '{{ task['user_id'] }}')">
+                                <button class="btn btn-sm btn-outline-primary action-btn" onclick="openPhotoModal('{{ task['screenshot_id'] }}')">
                                     <i class="bi bi-image me-1"></i>View Proof
                                 </button>
                                 {% else %}
@@ -194,11 +199,11 @@ HTML_TEMPLATE = """
         <div class="table-card">
             <h5 class="fw-bold mb-3"><i class="bi bi-people-fill text-success me-2"></i>Registered Users & Balances</h5>
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
+                <table class="table table-hover align-middle mb-0 searchable-table">
                     <thead class="table-light">
                         <tr>
                             <th>User ID</th>
-                            <th>Name</th>
+                            <th>Name & Username</th>
                             <th>UPI ID</th>
                             <th>Approved Tasks</th>
                             <th>Balance</th>
@@ -209,7 +214,10 @@ HTML_TEMPLATE = """
                         {% for u in users %}
                         <tr>
                             <td><code>{{ u['user_id'] }}</code></td>
-                            <td><b>{{ u['first_name'] }}</b></td>
+                            <td>
+                                <b>{{ u['first_name'] }}</b><br>
+                                <small class="text-primary">@{{ u['username'] if u['username'] else 'no_username' }}</small>
+                            </td>
                             <td><span class="text-primary fw-semibold">{{ u['upi_id'] or 'Not Set' }}</span></td>
                             <td><span class="badge bg-light text-dark border">{{ u['tasks_done'] }}</span></td>
                             <td><span class="fw-bold text-success">₹{{ u['balance'] }}</span></td>
@@ -230,7 +238,7 @@ HTML_TEMPLATE = """
         <div class="table-card">
             <h5 class="fw-bold mb-3"><i class="bi bi-wallet2 text-success me-2"></i>Withdrawal Requests Management</h5>
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
+                <table class="table table-hover align-middle mb-0 searchable-table">
                     <thead class="table-light">
                         <tr>
                             <th>ID</th>
@@ -281,11 +289,29 @@ HTML_TEMPLATE = """
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        function openPhotoModal(fileId, userId) {
+        function openPhotoModal(fileId) {
             var modalImage = document.getElementById('modalImage');
             modalImage.src = "/get-telegram-photo/" + fileId;
             var myModal = new bootstrap.Modal(document.getElementById('photoModal'));
             myModal.show();
+        }
+
+        function filterTables() {
+            var input = document.getElementById("searchInput");
+            var filter = input.value.toLowerCase();
+            var tables = document.getElementsByClassName("searchable-table");
+
+            for (var t = 0; t < tables.length; t++) {
+                var tr = tables[t].getElementsByTagName("tr");
+                for (var i = 1; i < tr.length; i++) {
+                    var text = tr[i].textContent || tr[i].innerText;
+                    if (text.toLowerCase().indexOf(filter) > -1) {
+                        tr[i].style.display = "";
+                    } else {
+                        tr[i].style.display = "none";
+                    }
+                }
+            }
         }
     </script>
 </body>
@@ -297,8 +323,14 @@ def index():
     conn = get_db_connection()
     users = conn.execute("SELECT * FROM users ORDER BY rowid DESC").fetchall()
     
-    # Task table shows entries that have screenshot uploaded
-    tasks = conn.execute("SELECT tasks.*, users.first_name FROM tasks LEFT JOIN users ON tasks.user_id = users.user_id WHERE tasks.screenshot_id IS NOT NULL AND tasks.screenshot_id != '' ORDER BY tasks.id DESC").fetchall()
+    # Task table shows entries with screenshot, joining username
+    tasks = conn.execute("""
+        SELECT tasks.*, users.first_name, users.username 
+        FROM tasks 
+        LEFT JOIN users ON tasks.user_id = users.user_id 
+        WHERE tasks.screenshot_id IS NOT NULL AND tasks.screenshot_id != '' 
+        ORDER BY tasks.id DESC
+    """).fetchall()
     
     withdrawals = conn.execute("SELECT * FROM withdrawals ORDER BY id DESC").fetchall()
     
@@ -365,10 +397,8 @@ def handle_payout(w_id, user_id, amount):
     conn.commit()
     conn.close()
     
-    # Send personal notification
     send_telegram_msg(user_id, f"✅ <b>Payout Successful!</b>\nYour withdrawal request for <b>₹{amount}</b> has been processed via UPI!")
     
-    # Send public announcement broadcast
     masked_user = str(user_id)[:4] + "****"
     public_notice = (
         "🥳 <b>NEW SUCCESSFUL WITHDRAWAL!</b> 🥳\n\n"
