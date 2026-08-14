@@ -94,18 +94,16 @@ HTML_TEMPLATE = """
 </head>
 <body class="p-3 p-md-4">
     <div class="container-fluid max-width-1400">
-        <!-- HEADER -->
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom">
             <div>
                 <h2 class="fw-bold text-dark mb-0"><i class="bi bi-speedometer2 text-primary me-2"></i>Multi-Task Admin Panel</h2>
-                <small class="text-muted">Only Completed Screenshots are Listed Below</small>
+                <small class="text-muted">Live Screenshot Sync Panel</small>
             </div>
             <div>
                 <a href="/download-csv" class="btn btn-outline-dark fw-semibold shadow-sm"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Export CSV Data</a>
             </div>
         </div>
 
-        <!-- STATS METRICS -->
         <div class="row g-3 mb-4">
             <div class="col-6 col-lg-3">
                 <div class="card card-stat bg-white p-3 border-start border-4 border-primary">
@@ -115,7 +113,7 @@ HTML_TEMPLATE = """
             </div>
             <div class="col-6 col-lg-3">
                 <div class="card card-stat bg-white p-3 border-start border-4 border-success">
-                    <div class="text-muted small fw-bold">SUBMITTED SCREENSHOTS</div>
+                    <div class="text-muted small fw-bold">SUBMITTED TASKS</div>
                     <div class="fs-2 fw-bold text-success mt-1">{{ total_submissions }}</div>
                 </div>
             </div>
@@ -133,9 +131,9 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <!-- SCREENSHOT SUBMISSIONS TABLE (ONLY WITH SS) -->
+        <!-- TASKS TABLE (Data transferred after SS upload) -->
         <div class="table-card">
-            <h5 class="fw-bold mb-3"><i class="bi bi-card-image text-primary me-2"></i>Task Submissions (Only SS Uploaded Tasks)</h5>
+            <h5 class="fw-bold mb-3"><i class="bi bi-card-image text-primary me-2"></i>Submitted Tasks (With Screenshots)</h5>
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
@@ -159,9 +157,13 @@ HTML_TEMPLATE = """
                             </td>
                             <td><code>{{ task['assigned_email'] }}</code></td>
                             <td>
+                                {% if task['screenshot_id'] %}
                                 <button class="btn btn-sm btn-outline-primary action-btn" onclick="openPhotoModal('{{ task['screenshot_id'] }}', '{{ task['user_id'] }}')">
                                     <i class="bi bi-image me-1"></i>View Proof
                                 </button>
+                                {% else %}
+                                <span class="text-muted small">No SS</span>
+                                {% endif %}
                             </td>
                             <td>
                                 {% if task['status'] == 'Approved' %}
@@ -251,7 +253,7 @@ HTML_TEMPLATE = """
                                 {% if w['status'] == 'Pending' %}
                                 <a href="/payout/pay/{{ w['id'] }}/{{ w['user_id'] }}/{{ w['amount'] }}" class="btn btn-primary action-btn"><i class="bi bi-send me-1"></i>Mark Paid & Broadcast</a>
                                 {% else %}
-                                <span class="text-muted small">Paid & Announced</span>
+                                <span class="text-muted small">Paid & Broadcasted</span>
                                 {% endif %}
                             </td>
                         </tr>
@@ -295,7 +297,7 @@ def index():
     conn = get_db_connection()
     users = conn.execute("SELECT * FROM users ORDER BY rowid DESC").fetchall()
     
-    # Filter: Only tasks that have a valid screenshot uploaded!
+    # Task table shows entries that have screenshot uploaded
     tasks = conn.execute("SELECT tasks.*, users.first_name FROM tasks LEFT JOIN users ON tasks.user_id = users.user_id WHERE tasks.screenshot_id IS NOT NULL AND tasks.screenshot_id != '' ORDER BY tasks.id DESC").fetchall()
     
     withdrawals = conn.execute("SELECT * FROM withdrawals ORDER BY id DESC").fetchall()
@@ -363,10 +365,10 @@ def handle_payout(w_id, user_id, amount):
     conn.commit()
     conn.close()
     
-    # 1. Private notice to the user
+    # Send personal notification
     send_telegram_msg(user_id, f"✅ <b>Payout Successful!</b>\nYour withdrawal request for <b>₹{amount}</b> has been processed via UPI!")
     
-    # 2. Public Announcement broadcast to all bot users
+    # Send public announcement broadcast
     masked_user = str(user_id)[:4] + "****"
     public_notice = (
         "🥳 <b>NEW SUCCESSFUL WITHDRAWAL!</b> 🥳\n\n"
