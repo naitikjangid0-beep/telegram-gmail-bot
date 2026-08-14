@@ -225,7 +225,6 @@ def start_bot_polling():
             print("Bot Polling Error, retrying...", e)
             time.sleep(5)
 
-# Start Bot Thread
 bot_thread = Thread(target=start_bot_polling)
 bot_thread.daemon = True
 bot_thread.start()
