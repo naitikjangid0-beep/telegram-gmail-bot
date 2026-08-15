@@ -1,300 +1,429 @@
 import os
-import urllib.parse
-from flask import Flask, render_template_string, request, redirect, url_for, session, flash
+import io
+import csv
+import requests
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import requests
+from flask import Flask, render_template_string, request, redirect, url_for, Response
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "super_secret_key_change_me")
 
-# Database Connection Helper
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg")
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 def get_db_connection():
-    db_url = os.getenv("DATABASE_URL")
+    db_url = DATABASE_URL
     if db_url and db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
-    
     conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
     return conn
 
-def init_db():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id BIGINT PRIMARY KEY,
-            username TEXT,
-            status TEXT DEFAULT 'pending',
-            registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    ''')
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS keys (
-            key TEXT PRIMARY KEY,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    ''')
-    conn.commit()
-    cur.close()
-    conn.close()
+def send_telegram_msg(chat_id, text):
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+        requests.post(url, data=data, timeout=5)
+    except Exception as e:
+        print("Telegram Send Error:", e)
 
-# Initialize DB tables on startup
-try:
-    init_db()
-except Exception as e:
-    print(f"Database Init Error: {e}")
+def broadcast_to_all(text):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM users")
+        users = cur.fetchall()
+        cur.close()
+        conn.close()
+        for u in users:
+            send_telegram_msg(u['user_id'], text)
+    except Exception as e:
+        print("Broadcast Error:", e)
 
-# HTML Template (Same Admin UI Dashboard)
+def init_app_db():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id BIGINT PRIMARY KEY,
+                first_name TEXT,
+                username TEXT,
+                upi_id TEXT,
+                balance DOUBLE PRECISION DEFAULT 0,
+                tasks_done INT DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS tasks (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                assigned_email TEXT,
+                screenshot_id TEXT,
+                status TEXT DEFAULT 'Pending',
+                submission_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS withdrawals (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                upi_id TEXT,
+                amount DOUBLE PRECISION,
+                status TEXT DEFAULT 'Pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        ''')
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print("DB Init Error:", e)
+
+init_app_db()
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard</title>
+    <title>Enterprise Admin Control Panel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; }
-        .container { max-width: 1000px; margin: auto; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        h1, h2 { color: #333; }
-        .stats { display: flex; gap: 20px; margin-bottom: 20px; }
-        .card { background: #007bff; color: white; padding: 15px; border-radius: 8px; flex: 1; text-align: center; }
-        .card h3 { margin: 0; font-size: 2em; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
-        th { background: #f8f9fa; }
-        .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; text-decoration: none; font-size: 14px; }
-        .btn-approve { background: #28a745; }
-        .btn-reject { background: #dc3545; }
-        .btn-primary { background: #007bff; }
-        .btn-danger { background: #d9534f; }
-        .form-group { margin-bottom: 15px; }
-        input[type="text"], input[type="password"], textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        .flash { padding: 10px; background: #e7f3fe; border-left: 6px solid #2196F3; margin-bottom: 15px; }
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .card-stat { border-radius: 12px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
+        .user-group-card { background: #ffffff; border-radius: 14px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; border-left: 5px solid #0d6efd; }
+        .badge-pending { background-color: #fff3cd; color: #856404; font-weight: 600; padding: 5px 10px; border-radius: 6px; }
+        .badge-approved { background-color: #d4edda; color: #155724; font-weight: 600; padding: 5px 10px; border-radius: 6px; }
+        .badge-rejected { background-color: #f8d7da; color: #721c24; font-weight: 600; padding: 5px 10px; border-radius: 6px; }
+        .action-btn { padding: 4px 10px; font-size: 0.82rem; border-radius: 6px; font-weight: 500; }
     </style>
 </head>
-<body>
-    <div class="container">
-        {% if not session.logged_in %}
-            <h2>Admin Login</h2>
-            {% with messages = get_flashed_messages() %}
-              {% if messages %}
-                <div class="flash">{{ messages[0] }}</div>
-              {% endif %}
-            {% endwith %}
-            <form method="POST" action="/login">
-                <div class="form-group">
-                    <label>Password:</label>
-                    <input type="password" name="password" required>
-                </div>
-                <button type="submit" class="btn btn-primary">Login</button>
-            </form>
-        {% else %}
-            <h1>Bot Admin Dashboard</h1>
-            <a href="/logout" style="float: right; margin-top: -40px;" class="btn btn-danger">Logout</a>
-            
-            {% with messages = get_flashed_messages() %}
-              {% if messages %}
-                <div class="flash">{{ messages[0] }}</div>
-              {% endif %}
-            {% endwith %}
+<body class="p-3 p-md-4">
+    <div class="container-fluid max-width-1400">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom gap-2">
+            <div>
+                <h2 class="fw-bold text-dark mb-0"><i class="bi bi-speedometer2 text-primary me-2"></i>Multi-Task Admin Dashboard</h2>
+                <small class="text-muted">Cloud PostgreSQL Database Enabled</small>
+            </div>
+            <div class="d-flex gap-2 align-items-center">
+                <input type="text" id="searchInput" onkeyup="filterTables()" class="form-control form-control-sm" style="width: 240px;" placeholder="🔍 Search User ID, Username...">
+                <a href="/download-csv" class="btn btn-sm btn-outline-dark fw-semibold shadow-sm"><i class="bi bi-file-earmark-spreadsheet me-1"></i>CSV Export</a>
+            </div>
+        </div>
 
-            <div class="stats">
-                <div class="card">
-                    <h3>{{ total_users }}</h3>
-                    <p>Total Users</p>
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-lg-3">
+                <div class="card card-stat bg-white p-3 border-start border-4 border-primary">
+                    <div class="text-muted small fw-bold">TOTAL USERS</div>
+                    <div class="fs-2 fw-bold text-dark mt-1">{{ total_users }}</div>
                 </div>
-                <div class="card" style="background: #28a745;">
-                    <h3>{{ approved_users }}</h3>
-                    <p>Approved Users</p>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="card card-stat bg-white p-3 border-start border-4 border-success">
+                    <div class="text-muted small fw-bold">TOTAL SUBMISSIONS</div>
+                    <div class="fs-2 fw-bold text-success mt-1">{{ total_submissions }}</div>
                 </div>
-                <div class="card" style="background: #ffc107; color: #333;">
-                    <h3>{{ pending_users }}</h3>
-                    <p>Pending Users</p>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="card card-stat bg-white p-3 border-start border-4 border-warning">
+                    <div class="text-muted small fw-bold">PENDING APPROVALS</div>
+                    <div class="fs-2 fw-bold text-warning mt-1">{{ pending_count }}</div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="card card-stat bg-white p-3 border-start border-4 border-info">
+                    <div class="text-muted small fw-bold">PENDING PAYOUTS</div>
+                    <div class="fs-2 fw-bold text-info mt-1">{{ pending_withdraws }}</div>
+                </div>
+            </div>
+        </div>
+
+        <h4 class="fw-bold mb-3 text-dark"><i class="bi bi-people-fill text-primary me-2"></i>User Wise Grouped Submissions</h4>
+        
+        {% for u_id, u_data in grouped_users.items() %}
+        <div class="user-group-card searchable-user-card">
+            <div class="d-flex flex-wrap justify-content-between align-items-center border-bottom pb-2 mb-3">
+                <div>
+                    <h5 class="fw-bold text-dark mb-0">{{ u_data['info']['first_name'] or 'User' }} 
+                        <span class="text-primary fs-6">(@{{ u_data['info']['username'] if u_data['info']['username'] else 'no_username' }})</span>
+                    </h5>
+                    <small class="text-muted">User ID: <code>{{ u_id }}</code> | UPI: <b class="text-dark">{{ u_data['info']['upi_id'] or 'Not Added' }}</b></small>
+                </div>
+                <div class="d-flex gap-2 align-items-center mt-2 mt-md-0">
+                    <span class="badge bg-success fs-6">Balance: ₹{{ u_data['info']['balance'] }}</span>
+                    <form action="/adjust-balance/{{ u_id }}" method="POST" class="d-flex gap-1 ms-2">
+                        <input type="number" step="1" name="amount" class="form-control form-control-sm" style="width: 80px;" placeholder="±Amt" required>
+                        <button type="submit" class="btn btn-sm btn-dark action-btn">Adjust</button>
+                    </form>
                 </div>
             </div>
 
-            <h2>User Approvals</h2>
-            <table>
-                <tr>
-                    <th>User ID</th>
-                    <th>Username</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-                {% for user in users %}
-                <tr>
-                    <td>{{ user.user_id }}</td>
-                    <td>@{{ user.username if user.username else 'N/A' }}</td>
-                    <td><strong>{{ user.status }}</strong></td>
-                    <td>
-                        {% if user.status != 'approved' %}
-                            <a href="/action/approve/{{ user.user_id }}" class="btn btn-approve">Approve</a>
-                        {% endif %}
-                        {% if user.status != 'rejected' %}
-                            <a href="/action/reject/{{ user.user_id }}" class="btn btn-reject">Reject</a>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </table>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Task ID</th>
+                            <th>Email Submitted</th>
+                            <th>Proof Screenshot</th>
+                            <th>Status</th>
+                            <th>Submitted At</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for task in u_data['tasks'] %}
+                        <tr>
+                            <td><b>#{{ task['id'] }}</b></td>
+                            <td><code>{{ task['assigned_email'] }}</code></td>
+                            <td>
+                                {% if task['screenshot_id'] %}
+                                <button class="btn btn-sm btn-outline-primary action-btn" onclick="openPhotoModal('{{ task['screenshot_id'] }}')">
+                                    <i class="bi bi-image me-1"></i>View Proof
+                                </button>
+                                {% else %}
+                                <span class="text-muted small">No Proof</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if task['status'] == 'Approved' %}
+                                    <span class="badge-approved">Approved</span>
+                                {% elif task['status'] == 'Rejected' %}
+                                    <span class="badge-rejected">Rejected</span>
+                                {% else %}
+                                    <span class="badge-pending">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td><small class="text-muted">{{ task['submission_time'] or 'Just now' }}</small></td>
+                            <td>
+                                {% if task['status'] == 'Pending' %}
+                                <a href="/task-action/approve/{{ task['id'] }}/{{ u_id }}" class="btn btn-success action-btn"><i class="bi bi-check-lg"></i> Approve (+₹10)</a>
+                                <a href="/task-action/reject/{{ task['id'] }}/{{ u_id }}" class="btn btn-danger action-btn"><i class="bi bi-x-lg"></i> Reject</a>
+                                {% else %}
+                                <span class="text-muted small">Completed</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-secondary">No submissions recorded yet.</div>
+        {% endfor %}
 
-            <h2 style="margin-top: 30px;">Generate Access Keys</h2>
-            <form method="POST" action="/generate_key" style="display: flex; gap: 10px;">
-                <input type="text" name="key_name" placeholder="Enter Key Name (e.g. KEY123)" required>
-                <button type="submit" class="btn btn-primary">Add Key</button>
-            </form>
-            <ul style="margin-top: 10px;">
-                {% for k in keys %}
-                    <li><strong>{{ k.key }}</strong> (Created: {{ k.created_at }}) <a href="/delete_key/{{ k.key }}" style="color: red; margin-left: 10px;">Delete</a></li>
-                {% endfor %}
-            </ul>
-
-            <h2 style="margin-top: 30px;">Broadcast Message</h2>
-            <form method="POST" action="/broadcast">
-                <div class="form-group">
-                    <textarea name="message" rows="4" placeholder="Type message to broadcast to all approved users..." required></textarea>
-                </div>
-                <button type="submit" class="btn btn-primary">Send Broadcast</button>
-            </form>
-        {% endif %}
+        <div class="card card-stat bg-white p-4 mb-4">
+            <h5 class="fw-bold mb-3"><i class="bi bi-wallet2 text-success me-2"></i>Withdrawal & UPI Requests</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Req ID</th>
+                            <th>User ID</th>
+                            <th>UPI Address</th>
+                            <th>Requested Amount</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for w in withdrawals %}
+                        <tr>
+                            <td>#{{ w['id'] }}</td>
+                            <td><code>{{ w['user_id'] }}</code></td>
+                            <td><b class="text-primary">{{ w['upi_id'] }}</b></td>
+                            <td><span class="fw-bold text-success">₹{{ w['amount'] }}</span></td>
+                            <td>
+                                <span class="badge {{ 'badge-approved' if w['status'] == 'Paid' else 'badge-pending' }}">{{ w['status'] }}</span>
+                            </td>
+                            <td>
+                                {% if w['status'] == 'Pending' %}
+                                <a href="/payout/pay/{{ w['id'] }}/{{ w['user_id'] }}/{{ w['amount'] }}" class="btn btn-primary action-btn"><i class="bi bi-send me-1"></i>Mark Paid & Broadcast</a>
+                                {% else %}
+                                <span class="text-muted small">Paid</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6" class="text-center text-muted">No withdrawal requests right now.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
+
+    <div class="modal fade" id="photoModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">Submitted Proof</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center p-3">
+                    <img id="modalImage" src="" class="img-fluid rounded border shadow-sm" style="max-height: 480px;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function openPhotoModal(fileId) {
+            var modalImage = document.getElementById('modalImage');
+            modalImage.src = "/get-telegram-photo/" + fileId;
+            var myModal = new bootstrap.Modal(document.getElementById('photoModal'));
+            myModal.show();
+        }
+
+        function filterTables() {
+            var input = document.getElementById("searchInput");
+            var filter = input.value.toLowerCase();
+            var cards = document.getElementsByClassName("searchable-user-card");
+
+            for (var i = 0; i < cards.length; i++) {
+                var text = cards[i].textContent || cards[i].innerText;
+                if (text.toLowerCase().indexOf(filter) > -1) {
+                    cards[i].style.display = "";
+                } else {
+                    cards[i].style.display = "none";
+                }
+            }
+        }
+    </script>
 </body>
 </html>
 """
 
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
 @app.route('/')
 def index():
-    if not session.get('logged_in'):
-        return render_template_string(HTML_TEMPLATE)
-    
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM users ORDER BY registered_at DESC;")
-    users = cur.fetchall()
-    
-    cur.execute("SELECT * FROM keys ORDER BY created_at DESC;")
-    keys = cur.fetchall()
-    
-    total_users = len(users)
-    approved_users = sum(1 for u in users if u['status'] == 'approved')
-    pending_users = sum(1 for u in users if u['status'] == 'pending')
-    
-    cur.close()
-    conn.close()
-    
-    return render_template_string(
-        HTML_TEMPLATE,
-        users=users,
-        keys=keys,
-        total_users=total_users,
-        approved_users=approved_users,
-        pending_users=pending_users
-    )
-
-@app.route('/login', methods=['POST'])
-def login():
-    password = request.form.get('password')
-    if password == ADMIN_PASSWORD:
-        session['logged_in'] = True
-    else:
-        flash("Invalid Password!")
-    return redirect(url_for('index'))
-
-@app.route('/logout')
-def logout():
-    session.pop('logged_in', None)
-    return redirect(url_for('index'))
-
-@app.route('/action/<string:action_type>/<int:user_id>')
-def user_action(action_type, user_id):
-    if not session.get('logged_in'):
-        return redirect(url_for('index'))
-    
-    new_status = 'approved' if action_type == 'approve' else 'rejected'
-    
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("UPDATE users SET status = %s WHERE user_id = %s;", (new_status, user_id))
-    conn.commit()
-    cur.close()
-    conn.close()
-    
-    if TELEGRAM_BOT_TOKEN:
-        msg = "✅ Your access request has been Approved! You can now use the bot." if new_status == 'approved' else "❌ Your access request was Rejected by admin."
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        try:
-            requests.post(url, json={"chat_id": user_id, "text": msg})
-        except Exception as e:
-            print(f"Error notifying user: {e}")
-
-    flash(f"User {user_id} marked as {new_status}.")
-    return redirect(url_for('index'))
-
-@app.route('/generate_key', methods=['POST'])
-def generate_key():
-    if not session.get('logged_in'):
-        return redirect(url_for('index'))
-    
-    key_name = request.form.get('key_name').strip()
-    if key_name:
+    try:
         conn = get_db_connection()
         cur = conn.cursor()
-        try:
-            cur.execute("INSERT INTO keys (key) VALUES (%s);", (key_name,))
-            conn.commit()
-            flash(f"Key '{key_name}' added successfully.")
-        except Exception as e:
-            flash(f"Error adding key: {e}")
-        finally:
-            cur.close()
-            conn.close()
-            
-    return redirect(url_for('index'))
-
-@app.route('/delete_key/<string:key_name>')
-def delete_key(key_name):
-    if not session.get('logged_in'):
-        return redirect(url_for('index'))
-    
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM keys WHERE key = %s;", (key_name,))
-    conn.commit()
-    cur.close()
-    conn.close()
-    
-    flash(f"Key '{key_name}' deleted.")
-    return redirect(url_for('index'))
-
-@app.route('/broadcast', methods=['POST'])
-def broadcast():
-    if not session.get('logged_in'):
-        return redirect(url_for('index'))
-    
-    message = request.form.get('message')
-    if message and TELEGRAM_BOT_TOKEN:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT user_id FROM users WHERE status = 'approved';")
-        approved_users = cur.fetchall()
+        
+        cur.execute("SELECT * FROM users ORDER BY user_id DESC")
+        users = cur.fetchall()
+        
+        cur.execute("""
+            SELECT tasks.*, users.first_name, users.username 
+            FROM tasks 
+            LEFT JOIN users ON tasks.user_id = users.user_id 
+            WHERE tasks.screenshot_id IS NOT NULL AND tasks.screenshot_id != '' 
+            ORDER BY tasks.id DESC
+        """)
+        tasks = cur.fetchall()
+        
+        cur.execute("SELECT * FROM withdrawals ORDER BY id DESC")
+        withdrawals = cur.fetchall()
+        
+        grouped_users = {}
+        for u in users:
+            u_id = u['user_id']
+            u_tasks = [t for t in tasks if t['user_id'] == u_id]
+            if u_tasks:
+                grouped_users[u_id] = {
+                    'info': u,
+                    'tasks': u_tasks
+                }
+                
+        total_users = len(users)
+        total_submissions = len(tasks)
+        pending_count = sum(1 for t in tasks if t['status'] == 'Pending')
+        pending_withdraws = sum(1 for w in withdrawals if w['status'] == 'Pending')
+        
         cur.close()
         conn.close()
+        return render_template_string(HTML_TEMPLATE, grouped_users=grouped_users, withdrawals=withdrawals, 
+                                      total_users=total_users, total_submissions=total_submissions,
+                                      pending_count=pending_count, pending_withdraws=pending_withdraws)
+    except Exception as e:
+        return f"Database Connection Error: {e}", 500
+
+@app.route('/get-telegram-photo/<file_id>')
+def get_telegram_photo(file_id):
+    try:
+        res = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={file_id}").json()
+        if res.get("ok"):
+            file_path = res["result"]["file_path"]
+            img_res = requests.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}")
+            return Response(img_res.content, mimetype=img_res.headers.get('content-type', 'image/jpeg'))
+    except Exception as e:
+        print("Error fetching photo:", e)
+    return "Image unavailable", 404
+
+@app.route('/task-action/<type>/<int:task_id>/<int:user_id>')
+def handle_task_action(type, task_id, user_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    if type == 'approve':
+        cur.execute("UPDATE tasks SET status = 'Approved' WHERE id = %s", (task_id,))
+        cur.execute("UPDATE users SET balance = balance + 10, tasks_done = tasks_done + 1 WHERE user_id = %s", (user_id,))
+        send_telegram_msg(user_id, "🎉 <b>Task Approved!</b>\nYour Gmail task was verified. <b>₹10</b> added to your balance!")
+    elif type == 'reject':
+        cur.execute("UPDATE tasks SET status = 'Rejected' WHERE id = %s", (task_id,))
+        send_telegram_msg(user_id, "❌ <b>Task Rejected!</b>\nYour submitted task was rejected.")
         
-        count = 0
-        for u in approved_users:
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-            try:
-                res = requests.post(url, json={"chat_id": u['user_id'], "text": message})
-                if res.status_code == 200:
-                    count += 1
-            except Exception as e:
-                print(f"Failed sending to {u['user_id']}: {e}")
-                
-        flash(f"Broadcast sent to {count} users.")
+    conn.commit()
+    cur.close()
+    conn.close()
     return redirect(url_for('index'))
+
+@app.route('/adjust-balance/<int:user_id>', methods=['POST'])
+def adjust_balance(user_id):
+    amount = request.form.get('amount')
+    if amount:
+        try:
+            amt = float(amount)
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET balance = balance + %s WHERE user_id = %s", (amt, user_id))
+            conn.commit()
+            cur.close()
+            conn.close()
+            send_telegram_msg(user_id, f"💳 <b>Balance Adjusted!</b>\nYour balance updated by <b>₹{amt}</b>.")
+        except Exception as e:
+            print(e)
+    return redirect(url_for('index'))
+
+@app.route('/payout/pay/<int:w_id>/<int:user_id>/<float:amount>')
+def handle_payout(w_id, user_id, amount):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE withdrawals SET status = 'Paid' WHERE id = %s", (w_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    
+    send_telegram_msg(user_id, f"✅ <b>Payout Successful!</b>\nYour withdrawal request for <b>₹{amount}</b> has been processed via UPI!")
+    
+    masked_user = str(user_id)[:4] + "****"
+    public_notice = (
+        "🥳 <b>NEW SUCCESSFUL WITHDRAWAL!</b> 🥳\n\n"
+        f"👤 <b>User ID:</b> <code>{masked_user}</code>\n"
+        f"💸 <b>Amount Paid:</b> <b>₹{amount}</b>\n"
+        "💳 <b>Status:</b> Payment Sent via UPI Successfully!\n\n"
+        "🚀 <i>Keep creating accounts & earning daily!</i>"
+    )
+    broadcast_to_all(public_notice)
+    
+    return redirect(url_for('index'))
+
+@app.route('/download-csv')
+def download_csv():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, user_id, assigned_email, status, submission_time FROM tasks WHERE screenshot_id IS NOT NULL")
+    tasks = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Task ID', 'User ID', 'Email', 'Status', 'Time'])
+    for t in tasks:
+        writer.writerow([t['id'], t['user_id'], t['assigned_email'], t['status'], t['submission_time']])
+        
+    output.seek(0)
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=tasks_history.csv"})
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
