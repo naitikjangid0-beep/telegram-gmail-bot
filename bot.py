@@ -101,7 +101,6 @@ def assign_task(message):
     except Exception as e:
         print("DB Error:", e)
 
-    # EXACT MATCH TO USER'S IMAGE FORMAT
     task_msg = (
         f"<b>New Task (Registration ID: {reg_id})</b>\n\n"
         "Complete Task and get paid for it.\n\n"
@@ -197,7 +196,6 @@ def withdraw(message):
         conn.commit()
         conn.close()
 
-        # UPDATED WITHDRAW MESSAGE
         withdraw_notice = (
             f"✅ <b>Withdrawal Request Submitted!</b>\n\n"
             f"💰 <b>Amount:</b> ₹{amount}\n"
