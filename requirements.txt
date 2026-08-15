@@ -2,4 +2,3 @@ flask
 requests
 pyTelegramBotAPI
 gunicorn
-psycopg2-binary
