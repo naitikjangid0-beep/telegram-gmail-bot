@@ -9,7 +9,6 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg")
 
-# Safe Permanent Database Path for Render Disk or Fallback Local
 PERSISTENT_DIR = "/var/data"
 if not os.path.exists(PERSISTENT_DIR):
     try:
@@ -91,12 +90,12 @@ HTML_TEMPLATE = """
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
-        body { background-color: #f8f9fa; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', system-ui, sans-serif; }
         .card-stat { border-radius: 12px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
-        .table-card { background: #ffffff; border-radius: 14px; padding: 24px; box-shadow: 0 4px 15px rgba(0,0,0,0.04); margin-bottom: 30px; }
-        .badge-pending { background-color: #fff3cd; color: #856404; font-weight: 600; padding: 6px 12px; border-radius: 6px; }
-        .badge-approved { background-color: #d4edda; color: #155724; font-weight: 600; padding: 6px 12px; border-radius: 6px; }
-        .badge-rejected { background-color: #f8d7da; color: #721c24; font-weight: 600; padding: 6px 12px; border-radius: 6px; }
+        .user-group-card { background: #ffffff; border-radius: 14px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; border-left: 5px solid #0d6efd; }
+        .badge-pending { background-color: #fff3cd; color: #856404; font-weight: 600; padding: 5px 10px; border-radius: 6px; }
+        .badge-approved { background-color: #d4edda; color: #155724; font-weight: 600; padding: 5px 10px; border-radius: 6px; }
+        .badge-rejected { background-color: #f8d7da; color: #721c24; font-weight: 600; padding: 5px 10px; border-radius: 6px; }
         .action-btn { padding: 4px 10px; font-size: 0.82rem; border-radius: 6px; font-weight: 500; }
     </style>
 </head>
@@ -105,10 +104,10 @@ HTML_TEMPLATE = """
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom gap-2">
             <div>
                 <h2 class="fw-bold text-dark mb-0"><i class="bi bi-speedometer2 text-primary me-2"></i>Multi-Task Admin Panel</h2>
-                <small class="text-muted">Live Screenshot Sync & Search Panel</small>
+                <small class="text-muted">User-Wise Grouped Task Dashboard</small>
             </div>
             <div class="d-flex gap-2 align-items-center">
-                <input type="text" id="searchInput" onkeyup="filterTables()" class="form-control form-control-sm" style="width: 240px;" placeholder="🔍 Search Name, @Username, ID...">
+                <input type="text" id="searchInput" onkeyup="filterTables()" class="form-control form-control-sm" style="width: 240px;" placeholder="🔍 Search User ID, @Username...">
                 <a href="/download-csv" class="btn btn-sm btn-outline-dark fw-semibold shadow-sm"><i class="bi bi-file-earmark-spreadsheet me-1"></i>CSV Export</a>
             </div>
         </div>
@@ -116,13 +115,13 @@ HTML_TEMPLATE = """
         <div class="row g-3 mb-4">
             <div class="col-6 col-lg-3">
                 <div class="card card-stat bg-white p-3 border-start border-4 border-primary">
-                    <div class="text-muted small fw-bold">TOTAL REGISTERED USERS</div>
+                    <div class="text-muted small fw-bold">TOTAL USERS</div>
                     <div class="fs-2 fw-bold text-dark mt-1">{{ total_users }}</div>
                 </div>
             </div>
             <div class="col-6 col-lg-3">
                 <div class="card card-stat bg-white p-3 border-start border-4 border-success">
-                    <div class="text-muted small fw-bold">SUBMITTED TASKS</div>
+                    <div class="text-muted small fw-bold">TOTAL SUBMISSIONS</div>
                     <div class="fs-2 fw-bold text-success mt-1">{{ total_submissions }}</div>
                 </div>
             </div>
@@ -140,16 +139,32 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <!-- TASKS TABLE -->
-        <div class="table-card">
-            <h5 class="fw-bold mb-3"><i class="bi bi-card-image text-primary me-2"></i>Submitted Tasks (With Screenshots)</h5>
+        <h4 class="fw-bold mb-3 text-dark"><i class="bi bi-people-fill text-primary me-2"></i>User Wise Grouped Tasks</h4>
+        
+        {% for u_id, u_data in grouped_users.items() %}
+        <div class="user-group-card searchable-user-card">
+            <div class="d-flex flex-wrap justify-content-between align-items-center border-bottom pb-2 mb-3">
+                <div>
+                    <h5 class="fw-bold text-dark mb-0">{{ u_data['info']['first_name'] or 'User' }} 
+                        <span class="text-primary fs-6">(@{{ u_data['info']['username'] if u_data['info']['username'] else 'no_username' }})</span>
+                    </h5>
+                    <small class="text-muted">User ID: <code>{{ u_id }}</code> | UPI: <b class="text-dark">{{ u_data['info']['upi_id'] or 'Not Set' }}</b></small>
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                    <span class="badge bg-success fs-6">Balance: ₹{{ u_data['info']['balance'] }}</span>
+                    <form action="/adjust-balance/{{ u_id }}" method="POST" class="d-flex gap-1 ms-2">
+                        <input type="number" step="1" name="amount" class="form-control form-control-sm" style="width: 80px;" placeholder="±Amt" required>
+                        <button type="submit" class="btn btn-sm btn-dark action-btn">Set Balance</button>
+                    </form>
+                </div>
+            </div>
+
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0 searchable-table">
+                <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
                             <th>Task ID</th>
-                            <th>User Details & Username</th>
-                            <th>Submitted Email</th>
+                            <th>Email Submitted</th>
                             <th>Proof Screenshot</th>
                             <th>Status</th>
                             <th>Submitted At</th>
@@ -157,14 +172,9 @@ HTML_TEMPLATE = """
                         </tr>
                     </thead>
                     <tbody>
-                        {% for task in tasks %}
+                        {% for task in u_data['tasks'] %}
                         <tr>
                             <td><b>#{{ task['id'] }}</b></td>
-                            <td>
-                                <div class="fw-bold">{{ task['first_name'] or 'User' }}</div>
-                                <div><small class="text-primary fw-semibold">@{{ task['username'] if task['username'] else 'no_username' }}</small></div>
-                                <code>{{ task['user_id'] }}</code>
-                            </td>
                             <td><code>{{ task['assigned_email'] }}</code></td>
                             <td>
                                 {% if task['screenshot_id'] %}
@@ -187,10 +197,10 @@ HTML_TEMPLATE = """
                             <td><small class="text-muted">{{ task['submission_time'] or 'Just now' }}</small></td>
                             <td>
                                 {% if task['status'] == 'Pending' %}
-                                <a href="/task-action/approve/{{ task['id'] }}/{{ task['user_id'] }}" class="btn btn-success action-btn"><i class="bi bi-check-lg"></i> Approve (+₹10)</a>
-                                <a href="/task-action/reject/{{ task['id'] }}/{{ task['user_id'] }}" class="btn btn-danger action-btn"><i class="bi bi-x-lg"></i> Reject</a>
+                                <a href="/task-action/approve/{{ task['id'] }}/{{ u_id }}" class="btn btn-success action-btn"><i class="bi bi-check-lg"></i> Approve (+₹10)</a>
+                                <a href="/task-action/reject/{{ task['id'] }}/{{ u_id }}" class="btn btn-danger action-btn"><i class="bi bi-x-lg"></i> Reject</a>
                                 {% else %}
-                                <span class="text-muted small">Completed</span>
+                                <span class="text-muted small">Done</span>
                                 {% endif %}
                             </td>
                         </tr>
@@ -199,51 +209,13 @@ HTML_TEMPLATE = """
                 </table>
             </div>
         </div>
-
-        <!-- USERS & BALANCE TABLE -->
-        <div class="table-card">
-            <h5 class="fw-bold mb-3"><i class="bi bi-people-fill text-success me-2"></i>Registered Users & Balances</h5>
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0 searchable-table">
-                    <thead class="table-light">
-                        <tr>
-                            <th>User ID</th>
-                            <th>Name & Username</th>
-                            <th>UPI ID</th>
-                            <th>Approved Tasks</th>
-                            <th>Balance</th>
-                            <th>Adjust Balance</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for u in users %}
-                        <tr>
-                            <td><code>{{ u['user_id'] }}</code></td>
-                            <td>
-                                <b>{{ u['first_name'] or 'User' }}</b><br>
-                                <small class="text-primary fw-semibold">@{{ u['username'] if u['username'] else 'no_username' }}</small>
-                            </td>
-                            <td><span class="text-primary fw-semibold">{{ u['upi_id'] or 'Not Set' }}</span></td>
-                            <td><span class="badge bg-light text-dark border">{{ u['tasks_done'] }}</span></td>
-                            <td><span class="fw-bold text-success">₹{{ u['balance'] }}</span></td>
-                            <td>
-                                <form action="/adjust-balance/{{ u['user_id'] }}" method="POST" class="d-flex gap-1">
-                                    <input type="number" step="1" name="amount" class="form-control form-control-sm px-1 py-0" style="width: 80px;" placeholder="±Amt" required>
-                                    <button type="submit" class="btn btn-sm btn-dark px-2 py-0 action-btn">Set</button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        {% endfor %}
 
         <!-- WITHDRAWAL REQUESTS TABLE -->
-        <div class="table-card">
+        <div class="card card-stat bg-white p-4 mb-4">
             <h5 class="fw-bold mb-3"><i class="bi bi-wallet2 text-success me-2"></i>Withdrawal Requests Management</h5>
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0 searchable-table">
+                <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
                             <th>ID</th>
@@ -266,7 +238,7 @@ HTML_TEMPLATE = """
                                 {% if w['status'] == 'Pending' %}
                                 <a href="/payout/pay/{{ w['id'] }}/{{ w['user_id'] }}/{{ w['amount'] }}" class="btn btn-primary action-btn"><i class="bi bi-send me-1"></i>Mark Paid & Broadcast</a>
                                 {% else %}
-                                <span class="text-muted small">Paid & Broadcasted</span>
+                                <span class="text-muted small">Paid</span>
                                 {% endif %}
                             </td>
                         </tr>
@@ -304,17 +276,14 @@ HTML_TEMPLATE = """
         function filterTables() {
             var input = document.getElementById("searchInput");
             var filter = input.value.toLowerCase();
-            var tables = document.getElementsByClassName("searchable-table");
+            var cards = document.getElementsByClassName("searchable-user-card");
 
-            for (var t = 0; t < tables.length; t++) {
-                var tr = tables[t].getElementsByTagName("tr");
-                for (var i = 1; i < tr.length; i++) {
-                    var text = tr[i].textContent || tr[i].innerText;
-                    if (text.toLowerCase().indexOf(filter) > -1) {
-                        tr[i].style.display = "";
-                    } else {
-                        tr[i].style.display = "none";
-                    }
+            for (var i = 0; i < cards.length; i++) {
+                var text = cards[i].textContent || cards[i].innerText;
+                if (text.toLowerCase().indexOf(filter) > -1) {
+                    cards[i].style.display = "";
+                } else {
+                    cards[i].style.display = "none";
                 }
             }
         }
@@ -338,13 +307,23 @@ def index():
     
     withdrawals = conn.execute("SELECT * FROM withdrawals ORDER BY id DESC").fetchall()
     
+    grouped_users = {}
+    for u in users:
+        u_id = u['user_id']
+        u_tasks = [t for t in tasks if t['user_id'] == u_id]
+        if u_tasks:
+            grouped_users[u_id] = {
+                'info': u,
+                'tasks': u_tasks
+            }
+            
     total_users = len(users)
     total_submissions = len(tasks)
     pending_count = sum(1 for t in tasks if t['status'] == 'Pending')
     pending_withdraws = sum(1 for w in withdrawals if w['status'] == 'Pending')
     
     conn.close()
-    return render_template_string(HTML_TEMPLATE, users=users, tasks=tasks, withdrawals=withdrawals, 
+    return render_template_string(HTML_TEMPLATE, grouped_users=grouped_users, withdrawals=withdrawals, 
                                   total_users=total_users, total_submissions=total_submissions,
                                   pending_count=pending_count, pending_withdraws=pending_withdraws)
 
