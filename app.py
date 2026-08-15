@@ -75,7 +75,10 @@ def init_app_db():
     except Exception as e:
         print("DB Init Error:", e)
 
-init_app_db()
+try:
+    init_app_db()
+except Exception as e:
+    print("Database init on startup error:", e)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
