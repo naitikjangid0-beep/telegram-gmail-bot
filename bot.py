@@ -14,16 +14,22 @@ CHANNEL_LINK = "https://t.me/+lOpg8sGDP7YyNWU1"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-FIRST_NAMES = ["Pooja", "Rahul", "Neha", "Amit", "Priya", "Suresh", "Kiran", "Vikram", "Anjali", "Rohan"]
-LAST_NAMES = ["Gupta", "Sharma", "Verma", "Singh", "Kumar", "Patel", "Joshi", "Yadav", "Mehta", "Das"]
+FIRST_NAMES = ["Robert", "Daniel", "Michael", "James", "David", "Pooja", "Rahul", "Neha", "Amit", "Priya"]
+LAST_NAMES = ["Odebralski", "Smith", "Johnson", "Williams", "Gupta", "Sharma", "Verma", "Singh"]
+MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
 def generate_task_details():
     f_name = random.choice(FIRST_NAMES)
     l_name = random.choice(LAST_NAMES)
-    rand_num = random.randint(100000, 999999)
+    rand_num = random.randint(100, 999)
     email = f"{f_name.lower()}{l_name.lower()}{rand_num}@gmail.com"
-    dob = f"{random.randint(1,28):02d}/{random.randint(1,12):02d}/{random.randint(1995,2003)}"
-    return f_name, l_name, email, dob
+    reg_id = f"G{random.randint(10000000, 99999999)}"
+    
+    month = random.choice(MONTHS)
+    day = random.randint(1, 28)
+    year = random.randint(1995, 2006)
+    
+    return f_name, l_name, email, reg_id, month, day, year
 
 def send_force_join_msg(chat_id):
     join_markup = InlineKeyboardMarkup()
@@ -82,7 +88,7 @@ def assign_task(message):
     user_id = message.from_user.id
     first_name = message.from_user.first_name or "User"
     username = message.from_user.username or ""
-    f_name, l_name, email, dob = generate_task_details()
+    f_name, l_name, email, reg_id, month, day, year = generate_task_details()
 
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -95,19 +101,23 @@ def assign_task(message):
     except Exception as e:
         print("DB Error:", e)
 
+    # EXACT MATCH TO USER'S IMAGE FORMAT
     task_msg = (
-        "-------------------\n"
+        f"<b>New Task (Registration ID: {reg_id})</b>\n\n"
+        "Complete Task and get paid for it.\n\n"
+        "For each Task you will receive: from 10₹\n"
+        "――――――――――\n"
         f"First name: <code>{f_name}</code>\n"
         f"Last name: <code>{l_name}</code>\n"
-        "-------------------\n"
+        "――――――――――\n"
         "Date of birth\n"
-        f"<code>{dob}</code>\n"
-        "-------------------\n"
+        f"Month: <code>{month}</code> | Day: <code>{day}</code> | Year: <code>{year}</code>\n"
+        "――――――――――\n"
         f"Email: <code>{email}</code>\n"
-        "-------------------\n"
+        "――――――――――\n"
         f"Password: <code>{FIXED_PASSWORD}</code>\n"
-        "-------------------\n"
-        "🔒 Use specified data for payout."
+        "――――――――――\n"
+        "🔒 Be sure to use the specified data, otherwise the account will not be paid."
     )
 
     inline_btn = InlineKeyboardMarkup()
@@ -140,7 +150,7 @@ def handle_screenshot(message):
         "✅ <b>Your task submitted!</b>\n"
         "Status: <b>Pending</b>\n\n"
         "📌 <b>NOTE:</b>\n"
-        "<i>Apne device se Gmail account ko logout kar dein aur payment ke liye <b>24-48 hours</b> wait karein.</i>"
+        "<i>Apne device se Gmail account ko logout kar dein.</i>"
     )
     bot.reply_to(message, reply_text, parse_mode="HTML")
 
@@ -187,7 +197,14 @@ def withdraw(message):
         conn.commit()
         conn.close()
 
-        bot.send_message(message.chat.id, f"✅ Withdrawal request of ₹{amount} submitted!", parse_mode="HTML")
+        # UPDATED WITHDRAW MESSAGE
+        withdraw_notice = (
+            f"✅ <b>Withdrawal Request Submitted!</b>\n\n"
+            f"💰 <b>Amount:</b> ₹{amount}\n"
+            f"💳 <b>UPI:</b> <code>{upi_id}</code>\n\n"
+            "📌 <b>Note:</b> Payment will be approved in 24 to 48 hours."
+        )
+        bot.send_message(message.chat.id, withdraw_notice, parse_mode="HTML")
     except Exception as e:
         bot.send_message(message.chat.id, f"Error: {e}")
 
