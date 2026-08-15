@@ -217,12 +217,41 @@ def balance(message):
 
 @bot.message_handler(func=lambda message: message.text == "📁 My Accounts")
 def my_accounts(message):
+    user_id = message.from_user.id
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT tasks_done FROM users WHERE user_id = ?", (message.from_user.id,))
-    row = cursor.fetchone()
+    
+    # Fetch all tasks submitted by user
+    cursor.execute("SELECT id, assigned_email, status FROM tasks WHERE user_id = ? AND screenshot_id IS NOT NULL AND screenshot_id != '' ORDER BY id DESC", (user_id,))
+    tasks = cursor.fetchall()
     conn.close()
-    bot.send_message(message.chat.id, f"📁 Approved Tasks: {row[0] if row else 0}")
+    
+    if not tasks:
+        bot.send_message(message.chat.id, "📁 <b>My Accounts History</b>\n\nNo accounts submitted yet.", parse_mode="HTML")
+        return
+
+    approved_cnt = sum(1 for t in tasks if t[2] == 'Approved')
+    rejected_cnt = sum(1 for t in tasks if t[2] == 'Rejected')
+    pending_cnt = sum(1 for t in tasks if t[2] == 'Pending')
+
+    msg = (
+        f"📁 <b>My Submitted Accounts Summary</b>\n"
+        f"🟢 Approved: <b>{approved_cnt}</b> | 🔴 Rejected: <b>{rejected_cnt}</b> | 🟡 Pending: <b>{pending_cnt}</b>\n"
+        "――――――――――――――――\n\n"
+    )
+    
+    for t in tasks[:15]: # Shows latest 15 tasks
+        t_id, email, status = t[0], t[1], t[2]
+        if status == 'Approved':
+            icon = "🟢 Approved (+₹10)"
+        elif status == 'Rejected':
+            icon = "🔴 Rejected"
+        else:
+            icon = "🟡 Pending Verification"
+            
+        msg += f"🆔 <b>#Task {t_id}</b>\n📧 <code>{email}</code>\nStatus: <b>{icon}</b>\n\n"
+
+    bot.send_message(message.chat.id, msg, parse_mode="HTML")
 
 @bot.message_handler(func=lambda message: message.text == "🎁 Rewards")
 def rewards_info(message):
