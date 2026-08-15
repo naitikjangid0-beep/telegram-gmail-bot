@@ -1,22 +1,22 @@
-import os
-import io
+import sqlite3
 import csv
+import io
+import os
 import requests
-import psycopg2
-from psycopg2.extras import RealDictCursor
 from flask import Flask, render_template_string, request, redirect, url_for, Response
 
 app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg")
-DATABASE_URL = os.getenv("DATABASE_URL")
 
-def get_db_connection():
-    db_url = DATABASE_URL
-    if db_url and db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-    conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
-    return conn
+PERSISTENT_DIR = "/var/data"
+if not os.path.exists(PERSISTENT_DIR):
+    try:
+        os.makedirs(PERSISTENT_DIR, exist_ok=True)
+    except Exception:
+        PERSISTENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DB_PATH = os.path.join(PERSISTENT_DIR, 'database.db')
 
 def send_telegram_msg(chat_id, text):
     try:
@@ -28,57 +28,57 @@ def send_telegram_msg(chat_id, text):
 
 def broadcast_to_all(text):
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT user_id FROM users")
-        users = cur.fetchall()
-        cur.close()
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        users = conn.execute("SELECT user_id FROM users").fetchall()
         conn.close()
         for u in users:
             send_telegram_msg(u['user_id'], text)
     except Exception as e:
         print("Broadcast Error:", e)
 
-def init_app_db():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                first_name TEXT,
-                username TEXT,
-                upi_id TEXT,
-                balance DOUBLE PRECISION DEFAULT 0,
-                tasks_done INT DEFAULT 0
-            );
-            CREATE TABLE IF NOT EXISTS tasks (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT,
-                assigned_email TEXT,
-                screenshot_id TEXT,
-                status TEXT DEFAULT 'Pending',
-                submission_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS withdrawals (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT,
-                upi_id TEXT,
-                amount DOUBLE PRECISION,
-                status TEXT DEFAULT 'Pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        ''')
-        conn.commit()
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print("DB Init Error:", e)
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-try:
-    init_app_db()
-except Exception as e:
-    print("Database init on startup error:", e)
+def init_app_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            first_name TEXT,
+            username TEXT,
+            upi_id TEXT,
+            balance REAL DEFAULT 0,
+            tasks_done INTEGER DEFAULT 0
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            assigned_email TEXT,
+            screenshot_id TEXT,
+            status TEXT DEFAULT 'Pending',
+            submission_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS withdrawals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            upi_id TEXT,
+            amount REAL,
+            status TEXT DEFAULT 'Pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_app_db()
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -101,10 +101,11 @@ HTML_TEMPLATE = """
 </head>
 <body class="p-3 p-md-4">
     <div class="container-fluid max-width-1400">
+        <!-- HEADER -->
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom gap-2">
             <div>
                 <h2 class="fw-bold text-dark mb-0"><i class="bi bi-speedometer2 text-primary me-2"></i>Multi-Task Admin Dashboard</h2>
-                <small class="text-muted">Cloud PostgreSQL Database Enabled</small>
+                <small class="text-muted">User-Wise Grouped Management System</small>
             </div>
             <div class="d-flex gap-2 align-items-center">
                 <input type="text" id="searchInput" onkeyup="filterTables()" class="form-control form-control-sm" style="width: 240px;" placeholder="🔍 Search User ID, Username...">
@@ -112,6 +113,7 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
+        <!-- STATS CARDS -->
         <div class="row g-3 mb-4">
             <div class="col-6 col-lg-3">
                 <div class="card card-stat bg-white p-3 border-start border-4 border-primary">
@@ -139,6 +141,7 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
+        <!-- USER WISE GROUPED TASKS SECTION -->
         <h4 class="fw-bold mb-3 text-dark"><i class="bi bi-people-fill text-primary me-2"></i>User Wise Grouped Submissions</h4>
         
         {% for u_id, u_data in grouped_users.items() %}
@@ -213,6 +216,7 @@ HTML_TEMPLATE = """
         <div class="alert alert-secondary">No submissions recorded yet.</div>
         {% endfor %}
 
+        <!-- WITHDRAWAL REQUESTS SECTION -->
         <div class="card card-stat bg-white p-4 mb-4">
             <h5 class="fw-bold mb-3"><i class="bi bi-wallet2 text-success me-2"></i>Withdrawal & UPI Requests</h5>
             <div class="table-responsive">
@@ -254,6 +258,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
+    <!-- SCREENSHOT MODAL -->
     <div class="modal fade" id="photoModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -298,47 +303,38 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        cur.execute("SELECT * FROM users ORDER BY user_id DESC")
-        users = cur.fetchall()
-        
-        cur.execute("""
-            SELECT tasks.*, users.first_name, users.username 
-            FROM tasks 
-            LEFT JOIN users ON tasks.user_id = users.user_id 
-            WHERE tasks.screenshot_id IS NOT NULL AND tasks.screenshot_id != '' 
-            ORDER BY tasks.id DESC
-        """)
-        tasks = cur.fetchall()
-        
-        cur.execute("SELECT * FROM withdrawals ORDER BY id DESC")
-        withdrawals = cur.fetchall()
-        
-        grouped_users = {}
-        for u in users:
-            u_id = u['user_id']
-            u_tasks = [t for t in tasks if t['user_id'] == u_id]
-            if u_tasks:
-                grouped_users[u_id] = {
-                    'info': u,
-                    'tasks': u_tasks
-                }
-                
-        total_users = len(users)
-        total_submissions = len(tasks)
-        pending_count = sum(1 for t in tasks if t['status'] == 'Pending')
-        pending_withdraws = sum(1 for w in withdrawals if w['status'] == 'Pending')
-        
-        cur.close()
-        conn.close()
-        return render_template_string(HTML_TEMPLATE, grouped_users=grouped_users, withdrawals=withdrawals, 
-                                      total_users=total_users, total_submissions=total_submissions,
-                                      pending_count=pending_count, pending_withdraws=pending_withdraws)
-    except Exception as e:
-        return f"Database Connection Error: {e}", 500
+    conn = get_db_connection()
+    users = conn.execute("SELECT * FROM users ORDER BY rowid DESC").fetchall()
+    
+    tasks = conn.execute("""
+        SELECT tasks.*, users.first_name, users.username 
+        FROM tasks 
+        LEFT JOIN users ON tasks.user_id = users.user_id 
+        WHERE tasks.screenshot_id IS NOT NULL AND tasks.screenshot_id != '' 
+        ORDER BY tasks.id DESC
+    """).fetchall()
+    
+    withdrawals = conn.execute("SELECT * FROM withdrawals ORDER BY id DESC").fetchall()
+    
+    grouped_users = {}
+    for u in users:
+        u_id = u['user_id']
+        u_tasks = [t for t in tasks if t['user_id'] == u_id]
+        if u_tasks:
+            grouped_users[u_id] = {
+                'info': u,
+                'tasks': u_tasks
+            }
+            
+    total_users = len(users)
+    total_submissions = len(tasks)
+    pending_count = sum(1 for t in tasks if t['status'] == 'Pending')
+    pending_withdraws = sum(1 for w in withdrawals if w['status'] == 'Pending')
+    
+    conn.close()
+    return render_template_string(HTML_TEMPLATE, grouped_users=grouped_users, withdrawals=withdrawals, 
+                                  total_users=total_users, total_submissions=total_submissions,
+                                  pending_count=pending_count, pending_withdraws=pending_withdraws)
 
 @app.route('/get-telegram-photo/<file_id>')
 def get_telegram_photo(file_id):
@@ -355,18 +351,17 @@ def get_telegram_photo(file_id):
 @app.route('/task-action/<type>/<int:task_id>/<int:user_id>')
 def handle_task_action(type, task_id, user_id):
     conn = get_db_connection()
-    cur = conn.cursor()
+    cursor = conn.cursor()
     
     if type == 'approve':
-        cur.execute("UPDATE tasks SET status = 'Approved' WHERE id = %s", (task_id,))
-        cur.execute("UPDATE users SET balance = balance + 10, tasks_done = tasks_done + 1 WHERE user_id = %s", (user_id,))
+        cursor.execute("UPDATE tasks SET status = 'Approved' WHERE id = ?", (task_id,))
+        cursor.execute("UPDATE users SET balance = balance + 10, tasks_done = tasks_done + 1 WHERE user_id = ?", (user_id,))
         send_telegram_msg(user_id, "🎉 <b>Task Approved!</b>\nYour Gmail task was verified. <b>₹10</b> added to your balance!")
     elif type == 'reject':
-        cur.execute("UPDATE tasks SET status = 'Rejected' WHERE id = %s", (task_id,))
+        cursor.execute("UPDATE tasks SET status = 'Rejected' WHERE id = ?", (task_id,))
         send_telegram_msg(user_id, "❌ <b>Task Rejected!</b>\nYour submitted task was rejected.")
         
     conn.commit()
-    cur.close()
     conn.close()
     return redirect(url_for('index'))
 
@@ -377,10 +372,9 @@ def adjust_balance(user_id):
         try:
             amt = float(amount)
             conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute("UPDATE users SET balance = balance + %s WHERE user_id = %s", (amt, user_id))
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amt, user_id))
             conn.commit()
-            cur.close()
             conn.close()
             send_telegram_msg(user_id, f"💳 <b>Balance Adjusted!</b>\nYour balance updated by <b>₹{amt}</b>.")
         except Exception as e:
@@ -390,10 +384,9 @@ def adjust_balance(user_id):
 @app.route('/payout/pay/<int:w_id>/<int:user_id>/<float:amount>')
 def handle_payout(w_id, user_id, amount):
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("UPDATE withdrawals SET status = 'Paid' WHERE id = %s", (w_id,))
+    cursor = conn.cursor()
+    cursor.execute("UPDATE withdrawals SET status = 'Paid' WHERE id = ?", (w_id,))
     conn.commit()
-    cur.close()
     conn.close()
     
     send_telegram_msg(user_id, f"✅ <b>Payout Successful!</b>\nYour withdrawal request for <b>₹{amount}</b> has been processed via UPI!")
@@ -413,10 +406,7 @@ def handle_payout(w_id, user_id, amount):
 @app.route('/download-csv')
 def download_csv():
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id, user_id, assigned_email, status, submission_time FROM tasks WHERE screenshot_id IS NOT NULL")
-    tasks = cur.fetchall()
-    cur.close()
+    tasks = conn.execute("SELECT id, user_id, assigned_email, status, submission_time FROM tasks WHERE screenshot_id IS NOT NULL").fetchall()
     conn.close()
 
     output = io.StringIO()
