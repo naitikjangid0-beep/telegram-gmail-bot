@@ -91,7 +91,7 @@ HTML_TEMPLATE = """
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
         body { background-color: #f4f6f9; font-family: 'Segoe UI', system-ui, sans-serif; }
-        .card-stat { border-radius: 12px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+        .card-stat { border-radius: 12px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
         .user-group-card { background: #ffffff; border-radius: 14px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; border-left: 5px solid #0d6efd; }
         .badge-pending { background-color: #fff3cd; color: #856404; font-weight: 600; padding: 5px 10px; border-radius: 6px; }
         .badge-approved { background-color: #d4edda; color: #155724; font-weight: 600; padding: 5px 10px; border-radius: 6px; }
@@ -101,17 +101,19 @@ HTML_TEMPLATE = """
 </head>
 <body class="p-3 p-md-4">
     <div class="container-fluid max-width-1400">
+        <!-- HEADER -->
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom gap-2">
             <div>
-                <h2 class="fw-bold text-dark mb-0"><i class="bi bi-speedometer2 text-primary me-2"></i>Multi-Task Admin Panel</h2>
-                <small class="text-muted">User-Wise Grouped Task Dashboard</small>
+                <h2 class="fw-bold text-dark mb-0"><i class="bi bi-speedometer2 text-primary me-2"></i>Multi-Task Admin Dashboard</h2>
+                <small class="text-muted">User-Wise Grouped Management System</small>
             </div>
             <div class="d-flex gap-2 align-items-center">
-                <input type="text" id="searchInput" onkeyup="filterTables()" class="form-control form-control-sm" style="width: 240px;" placeholder="🔍 Search User ID, @Username...">
+                <input type="text" id="searchInput" onkeyup="filterTables()" class="form-control form-control-sm" style="width: 240px;" placeholder="🔍 Search User ID, Username...">
                 <a href="/download-csv" class="btn btn-sm btn-outline-dark fw-semibold shadow-sm"><i class="bi bi-file-earmark-spreadsheet me-1"></i>CSV Export</a>
             </div>
         </div>
 
+        <!-- STATS CARDS -->
         <div class="row g-3 mb-4">
             <div class="col-6 col-lg-3">
                 <div class="card card-stat bg-white p-3 border-start border-4 border-primary">
@@ -139,7 +141,8 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <h4 class="fw-bold mb-3 text-dark"><i class="bi bi-people-fill text-primary me-2"></i>User Wise Grouped Tasks</h4>
+        <!-- USER WISE GROUPED TASKS SECTION -->
+        <h4 class="fw-bold mb-3 text-dark"><i class="bi bi-people-fill text-primary me-2"></i>User Wise Grouped Submissions</h4>
         
         {% for u_id, u_data in grouped_users.items() %}
         <div class="user-group-card searchable-user-card">
@@ -148,13 +151,13 @@ HTML_TEMPLATE = """
                     <h5 class="fw-bold text-dark mb-0">{{ u_data['info']['first_name'] or 'User' }} 
                         <span class="text-primary fs-6">(@{{ u_data['info']['username'] if u_data['info']['username'] else 'no_username' }})</span>
                     </h5>
-                    <small class="text-muted">User ID: <code>{{ u_id }}</code> | UPI: <b class="text-dark">{{ u_data['info']['upi_id'] or 'Not Set' }}</b></small>
+                    <small class="text-muted">User ID: <code>{{ u_id }}</code> | UPI: <b class="text-dark">{{ u_data['info']['upi_id'] or 'Not Added' }}</b></small>
                 </div>
-                <div class="d-flex gap-2 align-items-center">
+                <div class="d-flex gap-2 align-items-center mt-2 mt-md-0">
                     <span class="badge bg-success fs-6">Balance: ₹{{ u_data['info']['balance'] }}</span>
                     <form action="/adjust-balance/{{ u_id }}" method="POST" class="d-flex gap-1 ms-2">
                         <input type="number" step="1" name="amount" class="form-control form-control-sm" style="width: 80px;" placeholder="±Amt" required>
-                        <button type="submit" class="btn btn-sm btn-dark action-btn">Set Balance</button>
+                        <button type="submit" class="btn btn-sm btn-dark action-btn">Adjust</button>
                     </form>
                 </div>
             </div>
@@ -182,7 +185,7 @@ HTML_TEMPLATE = """
                                     <i class="bi bi-image me-1"></i>View Proof
                                 </button>
                                 {% else %}
-                                <span class="text-muted small">No SS</span>
+                                <span class="text-muted small">No Proof</span>
                                 {% endif %}
                             </td>
                             <td>
@@ -200,7 +203,7 @@ HTML_TEMPLATE = """
                                 <a href="/task-action/approve/{{ task['id'] }}/{{ u_id }}" class="btn btn-success action-btn"><i class="bi bi-check-lg"></i> Approve (+₹10)</a>
                                 <a href="/task-action/reject/{{ task['id'] }}/{{ u_id }}" class="btn btn-danger action-btn"><i class="bi bi-x-lg"></i> Reject</a>
                                 {% else %}
-                                <span class="text-muted small">Done</span>
+                                <span class="text-muted small">Completed</span>
                                 {% endif %}
                             </td>
                         </tr>
@@ -209,19 +212,21 @@ HTML_TEMPLATE = """
                 </table>
             </div>
         </div>
+        {% else %}
+        <div class="alert alert-secondary">No submissions recorded yet.</div>
         {% endfor %}
 
-        <!-- WITHDRAWAL REQUESTS TABLE -->
+        <!-- WITHDRAWAL REQUESTS SECTION -->
         <div class="card card-stat bg-white p-4 mb-4">
-            <h5 class="fw-bold mb-3"><i class="bi bi-wallet2 text-success me-2"></i>Withdrawal Requests Management</h5>
+            <h5 class="fw-bold mb-3"><i class="bi bi-wallet2 text-success me-2"></i>Withdrawal & UPI Requests</h5>
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th>ID</th>
+                            <th>Req ID</th>
                             <th>User ID</th>
-                            <th>UPI ID</th>
-                            <th>Amount</th>
+                            <th>UPI Address</th>
+                            <th>Requested Amount</th>
                             <th>Status</th>
                             <th>Action</th>
                         </tr>
@@ -233,7 +238,9 @@ HTML_TEMPLATE = """
                             <td><code>{{ w['user_id'] }}</code></td>
                             <td><b class="text-primary">{{ w['upi_id'] }}</b></td>
                             <td><span class="fw-bold text-success">₹{{ w['amount'] }}</span></td>
-                            <td><span class="badge {{ 'badge-approved' if w['status'] == 'Paid' else 'badge-pending' }}">{{ w['status'] }}</span></td>
+                            <td>
+                                <span class="badge {{ 'badge-approved' if w['status'] == 'Paid' else 'badge-pending' }}">{{ w['status'] }}</span>
+                            </td>
                             <td>
                                 {% if w['status'] == 'Pending' %}
                                 <a href="/payout/pay/{{ w['id'] }}/{{ w['user_id'] }}/{{ w['amount'] }}" class="btn btn-primary action-btn"><i class="bi bi-send me-1"></i>Mark Paid & Broadcast</a>
@@ -242,6 +249,8 @@ HTML_TEMPLATE = """
                                 {% endif %}
                             </td>
                         </tr>
+                        {% else %}
+                        <tr><td colspan="6" class="text-center text-muted">No withdrawal requests right now.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -254,7 +263,7 @@ HTML_TEMPLATE = """
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title fw-bold">Proof Screenshot</h5>
+                    <h5 class="modal-title fw-bold">Submitted Proof</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body text-center p-3">
