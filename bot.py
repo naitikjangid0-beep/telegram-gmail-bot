@@ -273,6 +273,28 @@ bot_thread = Thread(target=start_bot_polling)
 bot_thread.daemon = True
 bot_thread.start()
 
+# --- AUTOMATIC TELEGRAM BACKUP (Every 10 Minutes) ---
+def auto_backup_db():
+    ADMIN_CHAT_ID = 8825480979
+    time.sleep(30)  # Bot start hone ke 30 sec baad pehla backup bhejega
+    while True:
+        try:
+            if os.path.exists(DB_PATH):
+                with open(DB_PATH, "rb") as doc:
+                    bot.send_document(
+                        ADMIN_CHAT_ID, 
+                        doc, 
+                        caption="💾 <b>10-Min Auto-Backup</b>\nDatabase file safely backed up!",
+                        parse_mode="HTML"
+                    )
+        except Exception as e:
+            print("Backup Error:", e)
+        time.sleep(600)  # 600 seconds = 10 Minutes
+
+backup_thread = Thread(target=auto_backup_db)
+backup_thread.daemon = True
+backup_thread.start()
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
