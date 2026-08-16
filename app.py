@@ -1,26 +1,22 @@
-import os
+import sqlite3
 import csv
 import io
+import os
 import requests
-import psycopg2
-from psycopg2.extras import RealDictCursor
 from flask import Flask, render_template_string, request, redirect, url_for, Response
 
 app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg")
-DATABASE_URL = os.getenv("DATABASE_URL")
 
-def get_db_connection():
-    if DATABASE_URL:
-        # PostgreSQL Cloud Database
-        return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-    else:
-        # Local SQLite Fallback
-        import sqlite3
-        conn = sqlite3.connect('database.db', timeout=20)
-        conn.row_factory = sqlite3.Row
-        return conn
+PERSISTENT_DIR = "/var/data"
+if not os.path.exists(PERSISTENT_DIR):
+    try:
+        os.makedirs(PERSISTENT_DIR, exist_ok=True)
+    except Exception:
+        PERSISTENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DB_PATH = os.path.join(PERSISTENT_DIR, 'database.db')
 
 def send_telegram_msg(chat_id, text):
     try:
@@ -32,73 +28,53 @@ def send_telegram_msg(chat_id, text):
 
 def broadcast_to_all(text):
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM users")
-        users = cursor.fetchall()
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        users = conn.execute("SELECT user_id FROM users").fetchall()
         conn.close()
         for u in users:
             send_telegram_msg(u['user_id'], text)
     except Exception as e:
         print("Broadcast Error:", e)
 
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
 def init_app_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-    if DATABASE_URL:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                first_name TEXT,
-                username TEXT,
-                upi_id TEXT,
-                balance REAL DEFAULT 0,
-                tasks_done INTEGER DEFAULT 0
-            );
-            CREATE TABLE IF NOT EXISTS tasks (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT,
-                assigned_email TEXT,
-                screenshot_id TEXT,
-                status TEXT DEFAULT 'Pending',
-                submission_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS withdrawals (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT,
-                upi_id TEXT,
-                amount REAL,
-                status TEXT DEFAULT 'Pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        ''')
-    else:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                first_name TEXT,
-                username TEXT,
-                upi_id TEXT,
-                balance REAL DEFAULT 0,
-                tasks_done INTEGER DEFAULT 0
-            );
-            CREATE TABLE IF NOT EXISTS tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                assigned_email TEXT,
-                screenshot_id TEXT,
-                status TEXT DEFAULT 'Pending',
-                submission_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS withdrawals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                upi_id TEXT,
-                amount REAL,
-                status TEXT DEFAULT 'Pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            first_name TEXT,
+            username TEXT,
+            upi_id TEXT,
+            balance REAL DEFAULT 0,
+            tasks_done INTEGER DEFAULT 0
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            assigned_email TEXT,
+            screenshot_id TEXT,
+            status TEXT DEFAULT 'Pending',
+            submission_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS withdrawals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            upi_id TEXT,
+            amount REAL,
+            status TEXT DEFAULT 'Pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -125,6 +101,7 @@ HTML_TEMPLATE = """
 </head>
 <body class="p-3 p-md-4">
     <div class="container-fluid max-width-1400">
+        <!-- HEADER -->
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom gap-2">
             <div>
                 <h2 class="fw-bold text-dark mb-0"><i class="bi bi-speedometer2 text-primary me-2"></i>Multi-Task Admin Dashboard</h2>
@@ -136,6 +113,7 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
+        <!-- STATS CARDS -->
         <div class="row g-3 mb-4">
             <div class="col-6 col-lg-3">
                 <div class="card card-stat bg-white p-3 border-start border-4 border-primary">
@@ -163,6 +141,7 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
+        <!-- USER WISE GROUPED TASKS SECTION -->
         <h4 class="fw-bold mb-3 text-dark"><i class="bi bi-people-fill text-primary me-2"></i>User Wise Grouped Submissions</h4>
         
         {% for u_id, u_data in grouped_users.items() %}
@@ -237,6 +216,7 @@ HTML_TEMPLATE = """
         <div class="alert alert-secondary">No submissions recorded yet.</div>
         {% endfor %}
 
+        <!-- WITHDRAWAL REQUESTS SECTION -->
         <div class="card card-stat bg-white p-4 mb-4">
             <h5 class="fw-bold mb-3"><i class="bi bi-wallet2 text-success me-2"></i>Withdrawal & UPI Requests</h5>
             <div class="table-responsive">
@@ -278,6 +258,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
+    <!-- SCREENSHOT MODAL -->
     <div class="modal fade" id="photoModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -323,22 +304,17 @@ HTML_TEMPLATE = """
 @app.route('/')
 def index():
     conn = get_db_connection()
-    cursor = conn.cursor()
+    users = conn.execute("SELECT * FROM users ORDER BY rowid DESC").fetchall()
     
-    cursor.execute("SELECT * FROM users ORDER BY user_id DESC")
-    users = cursor.fetchall()
-    
-    cursor.execute("""
+    tasks = conn.execute("""
         SELECT tasks.*, users.first_name, users.username 
         FROM tasks 
         LEFT JOIN users ON tasks.user_id = users.user_id 
         WHERE tasks.screenshot_id IS NOT NULL AND tasks.screenshot_id != '' 
         ORDER BY tasks.id DESC
-    """)
-    tasks = cursor.fetchall()
+    """).fetchall()
     
-    cursor.execute("SELECT * FROM withdrawals ORDER BY id DESC")
-    withdrawals = cursor.fetchall()
+    withdrawals = conn.execute("SELECT * FROM withdrawals ORDER BY id DESC").fetchall()
     
     grouped_users = {}
     for u in users:
@@ -377,22 +353,13 @@ def handle_task_action(type, task_id, user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    if DATABASE_URL:
-        if type == 'approve':
-            cursor.execute("UPDATE tasks SET status = 'Approved' WHERE id = %s", (task_id,))
-            cursor.execute("UPDATE users SET balance = balance + 10, tasks_done = tasks_done + 1 WHERE user_id = %s", (user_id,))
-            send_telegram_msg(user_id, "🎉 <b>Task Approved!</b>\nYour Gmail task was verified. <b>₹10</b> added to your balance!")
-        elif type == 'reject':
-            cursor.execute("UPDATE tasks SET status = 'Rejected' WHERE id = %s", (task_id,))
-            send_telegram_msg(user_id, "❌ <b>Task Rejected!</b>\nYour submitted task was rejected.")
-    else:
-        if type == 'approve':
-            cursor.execute("UPDATE tasks SET status = 'Approved' WHERE id = ?", (task_id,))
-            cursor.execute("UPDATE users SET balance = balance + 10, tasks_done = tasks_done + 1 WHERE user_id = ?", (user_id,))
-            send_telegram_msg(user_id, "🎉 <b>Task Approved!</b>\nYour Gmail task was verified. <b>₹10</b> added to your balance!")
-        elif type == 'reject':
-            cursor.execute("UPDATE tasks SET status = 'Rejected' WHERE id = ?", (task_id,))
-            send_telegram_msg(user_id, "❌ <b>Task Rejected!</b>\nYour submitted task was rejected.")
+    if type == 'approve':
+        cursor.execute("UPDATE tasks SET status = 'Approved' WHERE id = ?", (task_id,))
+        cursor.execute("UPDATE users SET balance = balance + 10, tasks_done = tasks_done + 1 WHERE user_id = ?", (user_id,))
+        send_telegram_msg(user_id, "🎉 <b>Task Approved!</b>\nYour Gmail task was verified. <b>₹10</b> added to your balance!")
+    elif type == 'reject':
+        cursor.execute("UPDATE tasks SET status = 'Rejected' WHERE id = ?", (task_id,))
+        send_telegram_msg(user_id, "❌ <b>Task Rejected!</b>\nYour submitted task was rejected.")
         
     conn.commit()
     conn.close()
@@ -406,10 +373,7 @@ def adjust_balance(user_id):
             amt = float(amount)
             conn = get_db_connection()
             cursor = conn.cursor()
-            if DATABASE_URL:
-                cursor.execute("UPDATE users SET balance = balance + %s WHERE user_id = %s", (amt, user_id))
-            else:
-                cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amt, user_id))
+            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amt, user_id))
             conn.commit()
             conn.close()
             send_telegram_msg(user_id, f"💳 <b>Balance Adjusted!</b>\nYour balance updated by <b>₹{amt}</b>.")
@@ -421,10 +385,7 @@ def adjust_balance(user_id):
 def handle_payout(w_id, user_id, amount):
     conn = get_db_connection()
     cursor = conn.cursor()
-    if DATABASE_URL:
-        cursor.execute("UPDATE withdrawals SET status = 'Paid' WHERE id = %s", (w_id,))
-    else:
-        cursor.execute("UPDATE withdrawals SET status = 'Paid' WHERE id = ?", (w_id,))
+    cursor.execute("UPDATE withdrawals SET status = 'Paid' WHERE id = ?", (w_id,))
     conn.commit()
     conn.close()
     
@@ -445,9 +406,7 @@ def handle_payout(w_id, user_id, amount):
 @app.route('/download-csv')
 def download_csv():
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, user_id, assigned_email, status, submission_time FROM tasks WHERE screenshot_id IS NOT NULL")
-    tasks = cursor.fetchall()
+    tasks = conn.execute("SELECT id, user_id, assigned_email, status, submission_time FROM tasks WHERE screenshot_id IS NOT NULL").fetchall()
     conn.close()
 
     output = io.StringIO()
