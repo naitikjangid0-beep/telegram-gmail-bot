@@ -63,7 +63,7 @@ def start_message(message):
     username = message.from_user.username or ""
 
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=20)
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)", (user_id, first_name, username))
         c.execute("UPDATE users SET first_name = ?, username = ? WHERE user_id = ?", (first_name, username, user_id))
@@ -272,29 +272,6 @@ def start_bot_polling():
 bot_thread = Thread(target=start_bot_polling)
 bot_thread.daemon = True
 bot_thread.start()
-
-# --- AUTOMATIC TELEGRAM BACKUP (Safe Non-Blocking Version) ---
-def auto_backup_db():
-    ADMIN_CHAT_ID = 8825480979
-    time.sleep(30)
-    while True:
-        try:
-            if os.path.exists(DB_PATH):
-                # 'with open' fast close format to avoid file lock issues
-                with open(DB_PATH, "rb") as f:
-                    bot.send_document(
-                        ADMIN_CHAT_ID, 
-                        f, 
-                        caption="💾 <b>10-Min Auto-Backup</b>\nDatabase file safely backed up!",
-                        parse_mode="HTML"
-                    )
-        except Exception as e:
-            print("Backup Error:", e)
-        time.sleep(600)  # 10 Minutes
-
-backup_thread = Thread(target=auto_backup_db)
-backup_thread.daemon = True
-backup_thread.start()
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
