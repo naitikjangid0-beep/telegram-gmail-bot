@@ -63,7 +63,7 @@ def start_message(message):
     username = message.from_user.username or ""
 
     try:
-        conn = from app import app, DB_PATH, get_db_connection
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)", (user_id, first_name, username))
         c.execute("UPDATE users SET first_name = ?, username = ? WHERE user_id = ?", (first_name, username, user_id))
@@ -91,7 +91,7 @@ def assign_task(message):
     f_name, l_name, email, reg_id, month, day, year = generate_task_details()
 
     try:
-        conn = from app import app, DB_PATH, get_db_connection
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)", (user_id, first_name, username))
         c.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
@@ -137,7 +137,7 @@ def handle_screenshot(message):
     photo_id = message.photo[-1].file_id
 
     try:
-        conn = from app import app, DB_PATH, get_db_connection
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("UPDATE tasks SET screenshot_id = ? WHERE id = (SELECT MAX(id) FROM tasks WHERE user_id = ?)", (photo_id, user_id))
         conn.commit()
@@ -163,7 +163,7 @@ def process_upi_handler(message):
     user_id = message.from_user.id
 
     try:
-        conn = from app import app, DB_PATH, get_db_connection
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
         conn.commit()
@@ -176,7 +176,7 @@ def process_upi_handler(message):
 def withdraw(message):
     user_id = message.from_user.id
     try:
-        conn = from app import app, DB_PATH, get_db_connection
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT balance, upi_id FROM users WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
@@ -208,7 +208,7 @@ def withdraw(message):
 
 @bot.message_handler(func=lambda message: message.text == "💰 Balance")
 def balance(message):
-    conn = from app import app, DB_PATH, get_db_connection
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (message.from_user.id,))
     row = cursor.fetchone()
@@ -218,7 +218,7 @@ def balance(message):
 @bot.message_handler(func=lambda message: message.text == "📁 My Accounts")
 def my_accounts(message):
     user_id = message.from_user.id
-    conn = from app import app, DB_PATH, get_db_connection
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # Fetch all tasks submitted by user
