@@ -28,7 +28,7 @@ def send_telegram_msg(chat_id, text):
 
 def broadcast_to_all(text):
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=20)
+        conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         users = conn.execute("SELECT user_id FROM users").fetchall()
         conn.close()
