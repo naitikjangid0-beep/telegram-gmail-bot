@@ -26,22 +26,21 @@ def send_telegram_msg(chat_id, text):
     except Exception as e:
         print("Telegram Send Error:", e)
 
-def get_db_connection():
-    # Timeout aur WAL mode add kiya gaya hai
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute('PRAGMA journal_mode=WAL;') 
-    return conn
-
 def broadcast_to_all(text):
     try:
-        conn = get_db_connection() # Yahan bhi direct connection ko hataya hai
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
         users = conn.execute("SELECT user_id FROM users").fetchall()
         conn.close()
         for u in users:
             send_telegram_msg(u['user_id'], text)
     except Exception as e:
         print("Broadcast Error:", e)
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def init_app_db():
     conn = get_db_connection()
