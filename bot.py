@@ -5,7 +5,7 @@ import time
 import telebot
 from threading import Thread
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from app import app, DB_PATH, get_db_connection
+from app import app, DB_PATH
 
 BOT_TOKEN = "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg"
 FIXED_PASSWORD = "WsxJaggu@#"
