@@ -1,22 +1,25 @@
-import sqlite3
+import os
 import csv
 import io
-import os
+import time
 import requests
+import firebase_admin
+from firebase_admin import credentials, db
 from flask import Flask, render_template_string, request, redirect, url_for, Response
 
 app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg")
+FIREBASE_URL = "https://botpanel99-default-rtdb.firebaseio.com/"
 
-PERSISTENT_DIR = "/var/data"
-if not os.path.exists(PERSISTENT_DIR):
-    try:
-        os.makedirs(PERSISTENT_DIR, exist_ok=True)
-    except Exception:
-        PERSISTENT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-DB_PATH = os.path.join(PERSISTENT_DIR, 'database.db')
+# Firebase Initialization
+if not firebase_admin._apps:
+    cred_path = "secret_key.json"
+    if os.path.exists(cred_path):
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_URL})
+    else:
+        print("⚠️ Warning: secret_key.json not found! Ensure Firebase is configured.")
 
 def send_telegram_msg(chat_id, text):
     try:
@@ -28,57 +31,11 @@ def send_telegram_msg(chat_id, text):
 
 def broadcast_to_all(text):
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        users = conn.execute("SELECT user_id FROM users").fetchall()
-        conn.close()
-        for u in users:
-            send_telegram_msg(u['user_id'], text)
+        users_ref = db.reference('users').get() or {}
+        for u_id in users_ref.keys():
+            send_telegram_msg(u_id, text)
     except Exception as e:
         print("Broadcast Error:", e)
-
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_app_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            first_name TEXT,
-            username TEXT,
-            upi_id TEXT,
-            balance REAL DEFAULT 0,
-            tasks_done INTEGER DEFAULT 0
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            assigned_email TEXT,
-            screenshot_id TEXT,
-            status TEXT DEFAULT 'Pending',
-            submission_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS withdrawals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            upi_id TEXT,
-            amount REAL,
-            status TEXT DEFAULT 'Pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-init_app_db()
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -105,7 +62,7 @@ HTML_TEMPLATE = """
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom gap-2">
             <div>
                 <h2 class="fw-bold text-dark mb-0"><i class="bi bi-speedometer2 text-primary me-2"></i>Multi-Task Admin Dashboard</h2>
-                <small class="text-muted">User-Wise Grouped Management System</small>
+                <small class="text-muted">Firebase Cloud Realtime Management</small>
             </div>
             <div class="d-flex gap-2 align-items-center">
                 <input type="text" id="searchInput" onkeyup="filterTables()" class="form-control form-control-sm" style="width: 240px;" placeholder="🔍 Search User ID, Username...">
@@ -148,13 +105,13 @@ HTML_TEMPLATE = """
         <div class="user-group-card searchable-user-card">
             <div class="d-flex flex-wrap justify-content-between align-items-center border-bottom pb-2 mb-3">
                 <div>
-                    <h5 class="fw-bold text-dark mb-0">{{ u_data['info']['first_name'] or 'User' }} 
-                        <span class="text-primary fs-6">(@{{ u_data['info']['username'] if u_data['info']['username'] else 'no_username' }})</span>
+                    <h5 class="fw-bold text-dark mb-0">{{ u_data['info'].get('first_name') or 'User' }} 
+                        <span class="text-primary fs-6">(@{{ u_data['info'].get('username') if u_data['info'].get('username') else 'no_username' }})</span>
                     </h5>
-                    <small class="text-muted">User ID: <code>{{ u_id }}</code> | UPI: <b class="text-dark">{{ u_data['info']['upi_id'] or 'Not Added' }}</b></small>
+                    <small class="text-muted">User ID: <code>{{ u_id }}</code> | UPI: <b class="text-dark">{{ u_data['info'].get('upi_id') or 'Not Added' }}</b></small>
                 </div>
                 <div class="d-flex gap-2 align-items-center mt-2 mt-md-0">
-                    <span class="badge bg-success fs-6">Balance: ₹{{ u_data['info']['balance'] }}</span>
+                    <span class="badge bg-success fs-6">Balance: ₹{{ u_data['info'].get('balance', 0) }}</span>
                     <form action="/adjust-balance/{{ u_id }}" method="POST" class="d-flex gap-1 ms-2">
                         <input type="number" step="1" name="amount" class="form-control form-control-sm" style="width: 80px;" placeholder="±Amt" required>
                         <button type="submit" class="btn btn-sm btn-dark action-btn">Adjust</button>
@@ -180,7 +137,7 @@ HTML_TEMPLATE = """
                             <td><b>#{{ task['id'] }}</b></td>
                             <td><code>{{ task['assigned_email'] }}</code></td>
                             <td>
-                                {% if task['screenshot_id'] %}
+                                {% if task.get('screenshot_id') %}
                                 <button class="btn btn-sm btn-outline-primary action-btn" onclick="openPhotoModal('{{ task['screenshot_id'] }}')">
                                     <i class="bi bi-image me-1"></i>View Proof
                                 </button>
@@ -197,10 +154,10 @@ HTML_TEMPLATE = """
                                     <span class="badge-pending">Pending</span>
                                 {% endif %}
                             </td>
-                            <td><small class="text-muted">{{ task['submission_time'] or 'Just now' }}</small></td>
+                            <td><small class="text-muted">{{ task.get('submission_time') or 'Just now' }}</small></td>
                             <td>
                                 {% if task['status'] == 'Pending' %}
-                                <a href="/task-action/approve/{{ task['id'] }}/{{ u_id }}" class="btn btn-success action-btn"><i class="bi bi-check-lg"></i> Approve (+₹10)</a>
+                                <a href="/task-action/approve/{{ task['id'] }}/{{ u_id }}" class="btn btn-success action-btn"><i class="bi bi-check-lg"></i> Approve (+₹19)</a>
                                 <a href="/task-action/reject/{{ task['id'] }}/{{ u_id }}" class="btn btn-danger action-btn"><i class="bi bi-x-lg"></i> Reject</a>
                                 {% else %}
                                 <span class="text-muted small">Completed</span>
@@ -303,35 +260,33 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    conn = get_db_connection()
-    users = conn.execute("SELECT * FROM users ORDER BY rowid DESC").fetchall()
-    
-    tasks = conn.execute("""
-        SELECT tasks.*, users.first_name, users.username 
-        FROM tasks 
-        LEFT JOIN users ON tasks.user_id = users.user_id 
-        WHERE tasks.screenshot_id IS NOT NULL AND tasks.screenshot_id != '' 
-        ORDER BY tasks.id DESC
-    """).fetchall()
-    
-    withdrawals = conn.execute("SELECT * FROM withdrawals ORDER BY id DESC").fetchall()
-    
+    users_data = db.reference('users').get() or {}
+    tasks_data = db.reference('tasks').get() or {}
+    withdrawals_data = db.reference('withdrawals').get() or {}
+
+    tasks_list = []
+    for tid, tval in tasks_data.items():
+        if tval and tval.get('screenshot_id'):
+            tasks_list.append(tval)
+    tasks_list.sort(key=lambda x: str(x.get('submission_time', '')), reverse=True)
+
+    withdrawals = list(withdrawals_data.values()) if isinstance(withdrawals_data, dict) else []
+    withdrawals.sort(key=lambda x: str(x.get('created_at', '')), reverse=True)
+
     grouped_users = {}
-    for u in users:
-        u_id = u['user_id']
-        u_tasks = [t for t in tasks if t['user_id'] == u_id]
+    for uid, uinfo in users_data.items():
+        u_tasks = [t for t in tasks_list if str(t.get('user_id')) == str(uid)]
         if u_tasks:
-            grouped_users[u_id] = {
-                'info': u,
+            grouped_users[uid] = {
+                'info': uinfo,
                 'tasks': u_tasks
             }
-            
-    total_users = len(users)
-    total_submissions = len(tasks)
-    pending_count = sum(1 for t in tasks if t['status'] == 'Pending')
-    pending_withdraws = sum(1 for w in withdrawals if w['status'] == 'Pending')
-    
-    conn.close()
+
+    total_users = len(users_data)
+    total_submissions = len(tasks_list)
+    pending_count = sum(1 for t in tasks_list if t.get('status') == 'Pending')
+    pending_withdraws = sum(1 for w in withdrawals if w.get('status') == 'Pending')
+
     return render_template_string(HTML_TEMPLATE, grouped_users=grouped_users, withdrawals=withdrawals, 
                                   total_users=total_users, total_submissions=total_submissions,
                                   pending_count=pending_count, pending_withdraws=pending_withdraws)
@@ -348,46 +303,45 @@ def get_telegram_photo(file_id):
         print("Error fetching photo:", e)
     return "Image unavailable", 404
 
-@app.route('/task-action/<type>/<int:task_id>/<int:user_id>')
+@app.route('/task-action/<type>/<task_id>/<user_id>')
 def handle_task_action(type, task_id, user_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
     if type == 'approve':
-        cursor.execute("UPDATE tasks SET status = 'Approved' WHERE id = ?", (task_id,))
-        cursor.execute("UPDATE users SET balance = balance + 10, tasks_done = tasks_done + 1 WHERE user_id = ?", (user_id,))
-        send_telegram_msg(user_id, "🎉 <b>Task Approved!</b>\nYour Gmail task was verified. <b>₹10</b> added to your balance!")
+        db.reference(f"tasks/{task_id}").update({'status': 'Approved'})
+        u_ref = db.reference(f"users/{user_id}")
+        u_data = u_ref.get() or {}
+        
+        new_balance = float(u_data.get('balance', 0)) + 19
+        new_tasks = int(u_data.get('tasks_done', 0)) + 1
+        
+        u_ref.update({
+            'balance': new_balance,
+            'tasks_done': new_tasks
+        })
+        send_telegram_msg(user_id, "🎉 <b>Task Approved!</b>\nYour Gmail task was verified. <b>₹19</b> added to your balance!")
     elif type == 'reject':
-        cursor.execute("UPDATE tasks SET status = 'Rejected' WHERE id = ?", (task_id,))
+        db.reference(f"tasks/{task_id}").update({'status': 'Rejected'})
         send_telegram_msg(user_id, "❌ <b>Task Rejected!</b>\nYour submitted task was rejected.")
         
-    conn.commit()
-    conn.close()
     return redirect(url_for('index'))
 
-@app.route('/adjust-balance/<int:user_id>', methods=['POST'])
+@app.route('/adjust-balance/<user_id>', methods=['POST'])
 def adjust_balance(user_id):
     amount = request.form.get('amount')
     if amount:
         try:
             amt = float(amount)
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amt, user_id))
-            conn.commit()
-            conn.close()
+            u_ref = db.reference(f"users/{user_id}")
+            u_data = u_ref.get() or {}
+            curr_bal = float(u_data.get('balance', 0))
+            u_ref.update({'balance': curr_bal + amt})
             send_telegram_msg(user_id, f"💳 <b>Balance Adjusted!</b>\nYour balance updated by <b>₹{amt}</b>.")
         except Exception as e:
             print(e)
     return redirect(url_for('index'))
 
-@app.route('/payout/pay/<int:w_id>/<int:user_id>/<float:amount>')
+@app.route('/payout/pay/<w_id>/<user_id>/<float:amount>')
 def handle_payout(w_id, user_id, amount):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE withdrawals SET status = 'Paid' WHERE id = ?", (w_id,))
-    conn.commit()
-    conn.close()
+    db.reference(f"withdrawals/{w_id}").update({'status': 'Paid'})
     
     send_telegram_msg(user_id, f"✅ <b>Payout Successful!</b>\nYour withdrawal request for <b>₹{amount}</b> has been processed via UPI!")
     
@@ -405,15 +359,14 @@ def handle_payout(w_id, user_id, amount):
 
 @app.route('/download-csv')
 def download_csv():
-    conn = get_db_connection()
-    tasks = conn.execute("SELECT id, user_id, assigned_email, status, submission_time FROM tasks WHERE screenshot_id IS NOT NULL").fetchall()
-    conn.close()
-
+    tasks_data = db.reference('tasks').get() or {}
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['Task ID', 'User ID', 'Email', 'Status', 'Time'])
-    for t in tasks:
-        writer.writerow([t['id'], t['user_id'], t['assigned_email'], t['status'], t['submission_time']])
+    
+    for tid, t in tasks_data.items():
+        if t and t.get('screenshot_id'):
+            writer.writerow([t.get('id'), t.get('user_id'), t.get('assigned_email'), t.get('status'), t.get('submission_time')])
         
     output.seek(0)
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=tasks_history.csv"})
