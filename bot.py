@@ -1,11 +1,12 @@
 import os
 import random
-import sqlite3
 import time
 import telebot
+import firebase_admin
+from firebase_admin import credentials, db
 from threading import Thread
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from app import app, DB_PATH
+from app import app, FIREBASE_URL
 
 BOT_TOKEN = "8880017395:AAEaRXzwxC3jPmy9HASJiRH-4n5A2o7xgWg"
 FIXED_PASSWORD = "WsxJaggu@#"
@@ -58,19 +59,22 @@ def send_main_menu(chat_id, first_name):
 
 @bot.message_handler(commands=['start'])
 def start_message(message):
-    user_id = message.from_user.id
+    user_id = str(message.from_user.id)
     first_name = message.from_user.first_name or "User"
     username = message.from_user.username or ""
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)", (user_id, first_name, username))
-        c.execute("UPDATE users SET first_name = ?, username = ? WHERE user_id = ?", (first_name, username, user_id))
-        conn.commit()
-        conn.close()
+        u_ref = db.reference(f"users/{user_id}")
+        u_data = u_ref.get() or {}
+        u_ref.update({
+            'first_name': first_name,
+            'username': username,
+            'upi_id': u_data.get('upi_id', ''),
+            'balance': u_data.get('balance', 0),
+            'tasks_done': u_data.get('tasks_done', 0)
+        })
     except Exception as e:
-        print("DB Error:", e)
+        print("Firebase User Save Error:", e)
 
     send_force_join_msg(message.chat.id)
 
@@ -85,26 +89,37 @@ def check_join_callback(call):
 
 @bot.message_handler(func=lambda message: message.text == "📄 Register an Account")
 def assign_task(message):
-    user_id = message.from_user.id
+    user_id = str(message.from_user.id)
     first_name = message.from_user.first_name or "User"
     username = message.from_user.username or ""
     f_name, l_name, email, reg_id, month, day, year = generate_task_details()
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)", (user_id, first_name, username))
-        c.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
-        c.execute("INSERT INTO tasks (user_id, assigned_email, status) VALUES (?, ?, 'Pending')", (user_id, email))
-        conn.commit()
-        conn.close()
+        u_ref = db.reference(f"users/{user_id}")
+        u_data = u_ref.get() or {}
+        u_ref.update({
+            'first_name': first_name,
+            'username': username,
+            'balance': u_data.get('balance', 0)
+        })
+
+        # Naya Task create karke push karenge Firebase mein (Multi-task fix)
+        task_ref = db.reference("tasks").push()
+        task_ref.set({
+            'id': task_ref.key,
+            'user_id': user_id,
+            'assigned_email': email,
+            'screenshot_id': '',
+            'status': 'Pending',
+            'submission_time': time.strftime("%Y-%m-%d %H:%M:%S")
+        })
     except Exception as e:
-        print("DB Error:", e)
+        print("Firebase Task Save Error:", e)
 
     task_msg = (
         f"<b>New Task (Registration ID: {reg_id})</b>\n\n"
         "Complete Task and get paid for it.\n\n"
-        "For each Task you will receive: from 10₹\n"
+        "For each Task you will receive: 19₹\n"
         "――――――――――\n"
         f"First name: <code>{f_name}</code>\n"
         f"Last name: <code>{l_name}</code>\n"
@@ -133,15 +148,34 @@ def handle_done(call):
 
 @bot.message_handler(content_types=['photo'])
 def handle_screenshot(message):
-    user_id = message.from_user.id
+    user_id = str(message.from_user.id)
     photo_id = message.photo[-1].file_id
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("UPDATE tasks SET screenshot_id = ? WHERE id = (SELECT MAX(id) FROM tasks WHERE user_id = ?)", (photo_id, user_id))
-        conn.commit()
-        conn.close()
+        tasks_data = db.reference("tasks").get() or {}
+        # User ka sabse aakhri pending task dhoondhkar update karenge
+        user_tasks = [
+            (tid, t) for tid, t in tasks_data.items() 
+            if t and str(t.get('user_id')) == user_id and not t.get('screenshot_id')
+        ]
+        
+        if user_tasks:
+            target_task_id = user_tasks[-1][0]
+            db.reference(f"tasks/{target_task_id}").update({
+                'screenshot_id': photo_id,
+                'submission_time': time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+        else:
+            # Fallback agar purana search na mile
+            task_ref = db.reference("tasks").push()
+            task_ref.set({
+                'id': task_ref.key,
+                'user_id': user_id,
+                'assigned_email': 'Submitted Screenshot',
+                'screenshot_id': photo_id,
+                'status': 'Pending',
+                'submission_time': time.strftime("%Y-%m-%d %H:%M:%S")
+            })
     except Exception as e:
         print("Screenshot Update Error:", e)
 
@@ -160,45 +194,44 @@ def add_upi(message):
 
 def process_upi_handler(message):
     upi_id = message.text.strip()
-    user_id = message.from_user.id
+    user_id = str(message.from_user.id)
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
-        conn.commit()
-        conn.close()
+        db.reference(f"users/{user_id}").update({'upi_id': upi_id})
         bot.send_message(message.chat.id, f"💳 UPI Saved: <code>{upi_id}</code>", parse_mode="HTML")
     except Exception as e:
         bot.send_message(message.chat.id, "Error saving UPI.")
 
 @bot.message_handler(func=lambda message: message.text in ["🏧 Withdraw", "💰 Withdraw"])
 def withdraw(message):
-    user_id = message.from_user.id
+    user_id = str(message.from_user.id)
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT balance, upi_id FROM users WHERE user_id = ?", (user_id,))
-        row = cursor.fetchone()
+        u_data = db.reference(f"users/{user_id}").get() or {}
+        bal = float(u_data.get('balance', 0))
+        upi_id = u_data.get('upi_id', '')
 
-        if not row or row[0] <= 0:
+        if bal <= 0:
             bot.send_message(message.chat.id, "⚠️ Insufficient balance.")
-            conn.close()
             return
-        if not row[1]:
+        if not upi_id:
             bot.send_message(message.chat.id, "⚠️ Add UPI ID first using '🏦 Add UPI'.")
-            conn.close()
             return
 
-        amount, upi_id = row[0], row[1]
-        cursor.execute("INSERT INTO withdrawals (user_id, upi_id, amount, status) VALUES (?, ?, ?, 'Pending')", (user_id, upi_id, amount))
-        cursor.execute("UPDATE users SET balance = 0 WHERE user_id = ?", (user_id,))
-        conn.commit()
-        conn.close()
+        w_ref = db.reference("withdrawals").push()
+        w_ref.set({
+            'id': w_ref.key,
+            'user_id': user_id,
+            'upi_id': upi_id,
+            'amount': bal,
+            'status': 'Pending',
+            'created_at': time.strftime("%Y-%m-%d %H:%M:%S")
+        })
+
+        db.reference(f"users/{user_id}").update({'balance': 0})
 
         withdraw_notice = (
             f"✅ <b>Withdrawal Request Submitted!</b>\n\n"
-            f"💰 <b>Amount:</b> ₹{amount}\n"
+            f"💰 <b>Amount:</b> ₹{bal}\n"
             f"💳 <b>UPI:</b> <code>{upi_id}</code>\n\n"
             "📌 <b>Note:</b> Payment will be approved in 24 to 48 hours."
         )
@@ -208,31 +241,28 @@ def withdraw(message):
 
 @bot.message_handler(func=lambda message: message.text == "💰 Balance")
 def balance(message):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (message.from_user.id,))
-    row = cursor.fetchone()
-    conn.close()
-    bot.send_message(message.chat.id, f"💰 Balance: ₹{row[0] if row else 0}")
+    user_id = str(message.from_user.id)
+    u_data = db.reference(f"users/{user_id}").get() or {}
+    bal = u_data.get('balance', 0)
+    bot.send_message(message.chat.id, f"💰 Balance: ₹{bal}")
 
 @bot.message_handler(func=lambda message: message.text == "📁 My Accounts")
 def my_accounts(message):
-    user_id = message.from_user.id
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # Fetch all tasks submitted by user
-    cursor.execute("SELECT id, assigned_email, status FROM tasks WHERE user_id = ? AND screenshot_id IS NOT NULL AND screenshot_id != '' ORDER BY id DESC", (user_id,))
-    tasks = cursor.fetchall()
-    conn.close()
+    user_id = str(message.from_user.id)
+    tasks_data = db.reference("tasks").get() or {}
+
+    tasks = [
+        t for t in tasks_data.values() 
+        if t and str(t.get('user_id')) == user_id and t.get('screenshot_id')
+    ]
     
     if not tasks:
         bot.send_message(message.chat.id, "📁 <b>My Accounts History</b>\n\nNo accounts submitted yet.", parse_mode="HTML")
         return
 
-    approved_cnt = sum(1 for t in tasks if t[2] == 'Approved')
-    rejected_cnt = sum(1 for t in tasks if t[2] == 'Rejected')
-    pending_cnt = sum(1 for t in tasks if t[2] == 'Pending')
+    approved_cnt = sum(1 for t in tasks if t.get('status') == 'Approved')
+    rejected_cnt = sum(1 for t in tasks if t.get('status') == 'Rejected')
+    pending_cnt = sum(1 for t in tasks if t.get('status') == 'Pending')
 
     msg = (
         f"📁 <b>My Submitted Accounts Summary</b>\n"
@@ -240,10 +270,15 @@ def my_accounts(message):
         "――――――――――――――――\n\n"
     )
     
-    for t in tasks[:15]: # Shows latest 15 tasks
-        t_id, email, status = t[0], t[1], t[2]
+    tasks.sort(key=lambda x: str(x.get('submission_time', '')), reverse=True)
+    
+    for t in tasks[:15]:
+        t_id = t.get('id', 'N/A')
+        email = t.get('assigned_email', 'N/A')
+        status = t.get('status', 'Pending')
+        
         if status == 'Approved':
-            icon = "🟢 Approved (+₹10)"
+            icon = "🟢 Approved (+₹19)"
         elif status == 'Rejected':
             icon = "🔴 Rejected"
         else:
@@ -255,7 +290,7 @@ def my_accounts(message):
 
 @bot.message_handler(func=lambda message: message.text == "🎁 Rewards")
 def rewards_info(message):
-    bot.send_message(message.chat.id, "🎁 Reward: ₹10 per Gmail account.", parse_mode="HTML")
+    bot.send_message(message.chat.id, "🎁 Reward: ₹19 per Gmail account.", parse_mode="HTML")
 
 @bot.message_handler(func=lambda message: message.text == "💬 Help")
 def help_msg(message):
