@@ -22,16 +22,33 @@ MONTHS = ["January", "February", "March", "April", "May", "June", "July", "Augus
 def generate_task_details():
     f_name = random.choice(FIRST_NAMES)
     l_name = random.choice(LAST_NAMES)
-    rand_num = random.randint(100, 999)
+    rand_num = random.randint(10000, 99999)
     email = f"{f_name.lower()}{l_name.lower()}{rand_num}@gmail.com"
     reg_id = f"G{random.randint(10000000, 99999999)}"
-    
     month = random.choice(MONTHS)
     day = random.randint(1, 28)
     year = random.randint(1995, 2006)
-    
     return f_name, l_name, email, reg_id, month, day, year
 
+def get_unique_task_details():
+    try:
+        tasks_data = db.reference("tasks").get() or {}
+        used_emails = {
+            t.get('assigned_email') 
+            for t in tasks_data.values() 
+            if isinstance(t, dict) and t.get('assigned_email')
+        }
+    except Exception:
+        used_emails = set()
+
+    for _ in range(50):
+        f_name, l_name, email, reg_id, month, day, year = generate_task_details()
+        if email not in used_emails:
+            return f_name, l_name, email, reg_id, month, day, year
+
+    f_name, l_name, _, reg_id, month, day, year = generate_task_details()
+    email = f"{f_name.lower()}{l_name.lower()}{int(time.time())}@gmail.com"
+    return f_name, l_name, email, reg_id, month, day, year
 def send_force_join_msg(chat_id):
     join_markup = InlineKeyboardMarkup()
     join_markup.add(InlineKeyboardButton("📢 Join Official Channel", url=CHANNEL_LINK))
@@ -92,8 +109,8 @@ def assign_task(message):
     user_id = str(message.from_user.id)
     first_name = message.from_user.first_name or "User"
     username = message.from_user.username or ""
-    f_name, l_name, email, reg_id, month, day, year = generate_task_details()
-
+    f_name, l_name, email, reg_id, month, day, year = get_unique_task_details()
+    
     try:
         u_ref = db.reference(f"users/{user_id}")
         u_data = u_ref.get() or {}
