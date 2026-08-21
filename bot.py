@@ -136,7 +136,7 @@ def assign_task(message):
     task_msg = (
         f"<b>New Task (Registration ID: {reg_id})</b>\n\n"
         "Complete Task and get paid for it.\n\n"
-        "For each Task you will receive: 19₹\n"
+        "For each Task you will receive: 10₹\n"
         "――――――――――\n"
         f"First name: <code>{f_name}</code>\n"
         f"Last name: <code>{l_name}</code>\n"
