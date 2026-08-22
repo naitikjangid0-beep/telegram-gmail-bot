@@ -210,13 +210,34 @@ def add_upi(message):
     bot.register_next_step_handler(msg, process_upi_handler)
 
 def process_upi_handler(message):
+    if not message.text:
+        bot.send_message(message.chat.id, "⚠️ Invalid UPI ID. Please try again.")
+        return
+
     upi_id = message.text.strip()
     user_id = str(message.from_user.id)
-
+    
     try:
-        db.reference(f"users/{user_id}").update({'upi_id': upi_id})
+        u_ref = db.reference(f"users/{user_id}")
+        u_data = u_ref.get() or {}
+        
+        if not u_data:
+            # Agar user database mein nahi hai, toh account create karke UPI save karega
+            u_ref.set({
+                'first_name': message.from_user.first_name or "User",
+                'username': message.from_user.username or "",
+                'balance': 0.0,
+                'tasks_done': 0,
+                'upi_id': upi_id,
+                'banned': False
+            })
+        else:
+            # Agar user exist karta hai, toh UPI update kar dega
+            u_ref.update({'upi_id': upi_id})
+
         bot.send_message(message.chat.id, f"💳 UPI Saved: <code>{upi_id}</code>", parse_mode="HTML")
     except Exception as e:
+        print("UPI Save Error:", e)
         bot.send_message(message.chat.id, "Error saving UPI.")
 
 @bot.message_handler(func=lambda message: message.text in ["🏧 Withdraw", "💰 Withdraw"])
